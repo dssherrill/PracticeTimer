@@ -8,12 +8,15 @@ import {
 } from 'react-native';
 import { useAppColors } from '../theme';
 import { useSession } from '../contexts/SessionContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { formatHMS } from '../utils/format';
 import { computeDisplayPairs, computeLivePairs } from '../utils/pairs';
 import type { DisplayPair } from '../types';
 
 export default function SessionDetailScreen() {
   const colors = useAppColors();
+  const { settings } = useSettings();
+  const thresholdNorm = settings.sensitivityThreshold;
   const {
     status,
     elapsed,
@@ -103,8 +106,14 @@ export default function SessionDetailScreen() {
                 styles.meterFill,
                 {
                   width: `${Math.round(micLevel * 100)}%`,
-                  backgroundColor: status === 'playing' ? colors.playing : colors.resting,
+                  backgroundColor: micLevel >= thresholdNorm ? colors.playing : colors.resting,
                 },
+              ]}
+            />
+            <View
+              style={[
+                styles.thresholdLine,
+                { left: `${Math.round(thresholdNorm * 100)}%`, backgroundColor: colors.danger },
               ]}
             />
           </View>
@@ -181,8 +190,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 8,
+    position: 'relative',
   },
   meterFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 3 },
+  thresholdLine: { position: 'absolute', top: 0, bottom: 0, width: 2 },
   statsRow: { flexDirection: 'row', gap: 20, marginBottom: 4 },
   statText: { fontSize: 14, fontWeight: '500', fontVariant: ['tabular-nums'] },
   list: { flex: 1 },

@@ -8,12 +8,13 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { useAppColors } from '../../theme';
 import { SessionRecord, DisplayPair } from '../../types';
 import { getSessions, updateSession } from '../../utils/storage';
-import { getPieceNames, addPieceName } from '../../utils/storage';
+import { getPieceNames, addPieceName, removePieceName } from '../../utils/storage';
 import { formatHMS } from '../../utils/format';
 import { computeDisplayPairs } from '../../utils/pairs';
 
@@ -203,6 +204,20 @@ export default function SessionDetailScreen() {
                       },
                     ]}
                     onPress={() => handlePickPiece(name)}
+                    onLongPress={() => {
+                      Alert.alert('Delete Piece', `Remove "${name}" from saved pieces?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await removePieceName(name);
+                            setKnownPieces(await getPieceNames());
+                            if (editText === name) setEditText('');
+                          },
+                        },
+                      ]);
+                    }}
                   >
                     <Text style={[styles.pieceItemText, { color: colors.text }]}>{name}</Text>
                   </TouchableOpacity>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useAppColors } from '../../theme';
 import { SessionRecord } from '../../types';
 import { getSessions, deleteSession, deleteAllSessions } from '../../utils/storage';
@@ -16,12 +16,33 @@ import { formatHMS } from '../../utils/format';
 export default function SessionListScreen() {
   const colors = useAppColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const listRef = useRef<FlatList<SessionRecord>>(null);
 
   useFocusEffect(
     useCallback(() => {
-      getSessions().then(setSessions);
-    }, [])
+      getSessions().then((loaded) => {
+        setSessions(loaded);
+        const scrollToDate = route.params?.scrollToDate as string | undefined;
+        if (scrollToDate && loaded.length > 0) {
+          // Find first session matching the target date (local YYYY-MM-DD)
+          const idx = loaded.findIndex((s) => {
+            const d = new Date(s.date);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            return key === scrollToDate;
+          });
+          if (idx >= 0) {
+            // Delay to let the list render first
+            setTimeout(() => {
+              listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+            }, 300);
+          }
+          // Clear the param so it doesn't re-scroll on next focus
+          navigation.setParams({ scrollToDate: undefined });
+        }
+      });
+    }, [route.params?.scrollToDate])
   );
 
   const handleDelete = (id: string) => {
@@ -117,6 +138,7 @@ export default function SessionListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
+        ref={listRef}
         data={sessions}
         keyExtractor={(item) => item.id}
         renderItem={renderSession}
@@ -129,12 +151,20 @@ export default function SessionListScreen() {
         ListHeaderComponent={
           sessions.length > 0 ? (
             <View style={styles.headerRow}>
-              <TouchableOpacity
-                style={[styles.reportBtn, { backgroundColor: colors.primary }]}
-                onPress={() => navigation.navigate('PracticeReport')}
-              >
-                <Text style={styles.reportBtnText}>Practice Report</Text>
-              </TouchableOpacity>
+              <View style={styles.headerBtnGroup}>
+                <TouchableOpacity
+                  style={[styles.reportBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => navigation.navigate('PracticeReport')}
+                >
+                  <Text style={styles.reportBtnText}>Report</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.reportBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => navigation.navigate('Calendar')}
+                >
+                  <Text style={styles.reportBtnText}>Calendar</Text>
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity onPress={handleDeleteAll}>
                 <Text style={[styles.deleteAllText, { color: colors.danger }]}>Delete All</Text>
               </TouchableOpacity>
@@ -155,6 +185,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  headerBtnGroup: { flexDirection: 'row', gap: 8 },
   reportBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 6 },
   reportBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   deleteAllText: { fontSize: 14, fontWeight: '600' },

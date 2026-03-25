@@ -6,8 +6,9 @@ import { useAppColors } from '../theme';
 import { useSettings } from '../contexts/SettingsContext';
 import { useSession } from '../contexts/SessionContext';
 import { useMicMeter } from '../hooks/useMicMeter';
-import { getCumulativeStats, resetCumulativeStats } from '../utils/storage';
+import { getCumulativeStats, resetCumulativeStats, getSessions } from '../utils/storage';
 import { formatHuman } from '../utils/format';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CumulativeStats } from '../types';
 
 /**
@@ -250,6 +251,39 @@ export default function SettingsScreen() {
         onPress={handleResetStats}
       >
         <Text style={{ color: colors.danger, fontWeight: '600' }}>Reset Statistics</Text>
+      </TouchableOpacity>
+
+      {/* ── Data Recovery ─────────────────────────── */}
+      <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 32 }]}>
+        Data Recovery
+      </Text>
+      <TouchableOpacity
+        style={[styles.resetButton, { borderColor: colors.primary }]}
+        onPress={() => {
+          AsyncStorage.getItem('@PracticeTimer:sessionsBackup').then((backup) => {
+            if (!backup) {
+              Alert.alert('No Backup', 'No session backup is available.');
+              return;
+            }
+            const count = JSON.parse(backup).length;
+            Alert.alert(
+              'Restore Sessions',
+              `Restore ${count} session(s) from backup? This will replace your current session history.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Restore',
+                  onPress: async () => {
+                    await AsyncStorage.setItem('@PracticeTimer:sessions', backup);
+                    Alert.alert('Restored', `${count} session(s) restored from backup.`);
+                  },
+                },
+              ],
+            );
+          });
+        }}
+      >
+        <Text style={{ color: colors.primary, fontWeight: '600' }}>Restore Sessions from Backup</Text>
       </TouchableOpacity>
     </ScrollView>
   );

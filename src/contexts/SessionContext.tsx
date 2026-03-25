@@ -21,6 +21,7 @@ import { useSettings } from './SettingsContext';
 // ── Storage keys ────────────────────────────────────────────
 const SNAPSHOT_KEY = '@PracticeTimer:sessionSnapshot';
 const SESSIONS_KEY = '@PracticeTimer:sessions';
+const SESSIONS_BACKUP_KEY = '@PracticeTimer:sessionsBackup';
 const STATS_KEY = '@PracticeTimer:cumulativeStats';
 const PIECE_NAMES_KEY = '@PracticeTimer:pieceNames';
 
@@ -592,6 +593,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!snapJson) return;
       try {
         const snap: SessionSnapshot = JSON.parse(snapJson);
+        // Back up existing sessions before modifying
+        const existingJson = await AsyncStorage.getItem(SESSIONS_KEY);
+        if (existingJson) {
+          await AsyncStorage.setItem(SESSIONS_BACKUP_KEY, existingJson);
+        }
         // Auto-save the orphaned session
         if (snap.intervals.some(iv => iv.type === 'play')) {
           // Trim trailing rest / pause intervals
@@ -658,15 +664,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // ── CLEAR OLD DATA: wipe sessions without pairBoundaries ──
+  // ── MIGRATE OLD DATA: backfill pairBoundaries for legacy sessions ──
   useEffect(() => {
     (async () => {
       const json = await AsyncStorage.getItem(SESSIONS_KEY);
       if (!json) return;
       try {
         const sessions: any[] = JSON.parse(json);
-        if (sessions.length > 0 && !sessions[0].pairBoundaries) {
-          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify([]));
+        let changed = false;
+        for (const s of sessions) {
+          if (!s.pairBoundaries) {
+            s.pairBoundaries = [0];
+            changed = true;
+          }
+        }
+        if (changed) {
+          // Back up before migrating
+          await AsyncStorage.setItem(SESSIONS_BACKUP_KEY, json);
+          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
         }
       } catch {}
     })();

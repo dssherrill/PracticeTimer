@@ -9,15 +9,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useAppColors } from '../theme';
 import { useSession } from '../contexts/SessionContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { formatHMS } from '../utils/format';
-import { getPieceNames, addPieceName } from '../utils/storage';
+import { getPieceNames, addPieceName, removePieceName } from '../utils/storage';
 import { computeDisplayPairs, computeLivePairs } from '../utils/pairs';
 
 export default function SessionSimpleScreen() {
   const colors = useAppColors();
+  const { settings } = useSettings();
+  const thresholdNorm = settings.sensitivityThreshold;
   const {
     status,
     elapsed,
@@ -154,8 +158,14 @@ export default function SessionSimpleScreen() {
               styles.meterFill,
               {
                 width: `${Math.round(micLevel * 100)}%`,
-                backgroundColor: status === 'playing' ? colors.playing : colors.resting,
+                backgroundColor: micLevel >= thresholdNorm ? colors.playing : colors.resting,
               },
+            ]}
+          />
+          <View
+            style={[
+              styles.thresholdLine,
+              { left: `${Math.round(thresholdNorm * 100)}%`, backgroundColor: colors.danger },
             ]}
           />
         </View>
@@ -348,6 +358,20 @@ export default function SessionSimpleScreen() {
                     key={name}
                     style={[styles.piecePickerItem, { borderBottomColor: colors.border, backgroundColor: editPieceText === name ? colors.primary + '30' : 'transparent' }]}
                     onPress={() => setEditPieceText(name)}
+                    onLongPress={() => {
+                      Alert.alert('Delete Piece', `Remove "${name}" from saved pieces?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await removePieceName(name);
+                            setKnownPieces(await getPieceNames());
+                            if (editPieceText === name) setEditPieceText('');
+                          },
+                        },
+                      ]);
+                    }}
                   >
                     <Text style={{ color: colors.text, fontSize: 14 }}>{name}</Text>
                   </TouchableOpacity>
@@ -386,8 +410,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 16,
+    position: 'relative',
   },
   meterFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 5 },
+  thresholdLine: { position: 'absolute', top: 0, bottom: 0, width: 2 },
   statsRow: { flexDirection: 'row', gap: 24, marginBottom: 12 },
   statText: { fontSize: 16, fontWeight: '500', fontVariant: ['tabular-nums'] },
   pairLabel: { fontSize: 13, fontVariant: ['tabular-nums'], textAlign: 'center' },

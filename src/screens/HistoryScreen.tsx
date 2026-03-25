@@ -4,6 +4,7 @@ import { useAppColors } from '../theme';
 import SessionListScreen from './history/SessionListScreen';
 import SessionDetailScreen from './history/SessionDetailScreen';
 import PracticeReportScreen from './history/PracticeReportScreen';
+import CalendarScreen from './history/CalendarScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -31,6 +32,11 @@ export default function HistoryScreen() {
         name="PracticeReport"
         component={PracticeReportScreen}
         options={{ title: 'Practice Report' }}
+      />
+      <Stack.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{ title: 'Calendar' }}
       />
     </Stack.Navigator>
   );
