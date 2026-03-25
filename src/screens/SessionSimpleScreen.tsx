@@ -165,7 +165,7 @@ export default function SessionSimpleScreen() {
           <View
             style={[
               styles.thresholdLine,
-              { left: `${Math.round(thresholdNorm * 100)}%`, backgroundColor: colors.danger },
+              { left: `${Math.round(Math.max(0, Math.min(1, thresholdNorm)) * 100)}%`, backgroundColor: colors.danger },
             ]}
           />
         </View>
@@ -365,9 +365,14 @@ export default function SessionSimpleScreen() {
                           text: 'Delete',
                           style: 'destructive',
                           onPress: async () => {
-                            await removePieceName(name);
-                            setKnownPieces(await getPieceNames());
-                            if (editPieceText === name) setEditPieceText('');
+                            try {
+                              await removePieceName(name);
+                              setKnownPieces(await getPieceNames());
+                              if (editPieceText === name) setEditPieceText('');
+                            } catch (e: any) {
+                              console.error('Failed to delete piece name:', e);
+                              Alert.alert('Error', e?.message ?? 'Failed to delete piece name.');
+                            }
                           },
                         },
                       ]);

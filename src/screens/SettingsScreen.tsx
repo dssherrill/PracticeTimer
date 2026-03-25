@@ -259,13 +259,25 @@ export default function SettingsScreen() {
       </Text>
       <TouchableOpacity
         style={[styles.resetButton, { borderColor: colors.primary }]}
-        onPress={() => {
-          AsyncStorage.getItem('@PracticeTimer:sessionsBackup').then((backup) => {
+        onPress={async () => {
+          try {
+            const backup = await AsyncStorage.getItem('@PracticeTimer:sessionsBackup');
             if (!backup) {
               Alert.alert('No Backup', 'No session backup is available.');
               return;
             }
-            const count = JSON.parse(backup).length;
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(backup);
+            } catch {
+              Alert.alert('Error', 'Backup data is corrupted and cannot be restored.');
+              return;
+            }
+            if (!Array.isArray(parsed)) {
+              Alert.alert('Error', 'Backup data is not in the expected format.');
+              return;
+            }
+            const count = parsed.length;
             Alert.alert(
               'Restore Sessions',
               `Restore ${count} session(s) from backup? This will replace your current session history.`,
@@ -280,7 +292,10 @@ export default function SettingsScreen() {
                 },
               ],
             );
-          });
+          } catch (e: any) {
+            console.error('Restore failed:', e);
+            Alert.alert('Error', e?.message ?? 'Failed to restore sessions.');
+          }
         }}
       >
         <Text style={{ color: colors.primary, fontWeight: '600' }}>Restore Sessions from Backup</Text>

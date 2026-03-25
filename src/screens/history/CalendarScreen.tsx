@@ -144,7 +144,7 @@ export default function CalendarScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getSessions().then(setSessions);
+      getSessions().then(setSessions).catch((e) => console.error('Failed to load sessions:', e));
     }, []),
   );
 
@@ -218,7 +218,7 @@ export default function CalendarScreen() {
         </View>
       );
     },
-    [dailyMap, colors],
+    [dailyMap, colors, navigation],
   );
 
   return (

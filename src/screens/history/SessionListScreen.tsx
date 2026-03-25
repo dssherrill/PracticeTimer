@@ -143,7 +143,10 @@ export default function SessionListScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderSession}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
+onScrollToIndexFailed={(info) => {
+  const offset = info.averageItemLength * info.index;
+  listRef.current?.scrollToOffset({ offset, animated: true });
+}}        ListEmptyComponent={
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             No sessions recorded yet.
           </Text>
