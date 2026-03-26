@@ -57,4 +57,6 @@ export interface Settings {
   sensitivityThreshold: number;   // 0–1, default ~0.5
   minRestDuration: number;        // seconds, 1–60, default 5
   minPlayDuration: number;        // seconds, 1–120, default 30
+  musicDetectionEnabled: boolean; // default false
+  musicDetectionStrictness: number; // 0–1, default 0.3 (low = permissive)
 }

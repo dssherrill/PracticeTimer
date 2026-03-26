@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS: Settings = {
   sensitivityThreshold: 0.5,
   minRestDuration: 5,
   minPlayDuration: 30,
+  musicDetectionEnabled: false,
+  musicDetectionStrictness: 0.3,
 };
 
 interface SettingsContextValue {

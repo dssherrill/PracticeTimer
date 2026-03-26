@@ -18,6 +18,38 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SessionStatus, Interval, SessionRecord } from '../types';
 import { useSettings } from './SettingsContext';
 
+// ── Music detection ─────────────────────────────────────────
+// Buffer size: 30 samples × 100ms = 3-second sliding window
+const MUSIC_DETECT_BUFFER_SIZE = 30;
+
+/**
+ * Score how "music-like" the recent amplitude envelope is.
+ *
+ * Wind instruments produce sustained, stable amplitude. Speech has rapid
+ * syllable-rate fluctuations (~3-7 Hz) and frequent dips. We measure:
+ *   1. Sustain ratio — fraction of samples above the sensitivity threshold.
+ *   2. Amplitude stability — 1 minus the coefficient of variation of the
+ *      above-threshold samples (low CV = steady tone).
+ *
+ * Returns a score in [0, 1] where higher = more music-like.
+ */
+function computeMusicScore(buffer: number[], threshold: number): number {
+  if (buffer.length < 5) return 1;   // not enough data — assume music
+
+  const aboveThreshold = buffer.filter(a => a >= threshold);
+  const sustainRatio = aboveThreshold.length / buffer.length;
+
+  if (aboveThreshold.length < 3) return 0;   // mostly silence
+
+  const mean = aboveThreshold.reduce((s, v) => s + v, 0) / aboveThreshold.length;
+  const variance =
+    aboveThreshold.reduce((s, v) => s + (v - mean) ** 2, 0) / aboveThreshold.length;
+  const cv = Math.sqrt(variance) / Math.max(mean, 0.001);
+  const stability = Math.max(0, 1 - cv);
+
+  return 0.5 * sustainRatio + 0.5 * stability;
+}
+
 // ── Storage keys ────────────────────────────────────────────
 const SNAPSHOT_KEY = '@PracticeTimer:sessionSnapshot';
 const SESSIONS_KEY = '@PracticeTimer:sessions';
@@ -127,6 +159,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const pauseStartRef = useRef<number | null>(null);
   const pairBoundariesRef = useRef<number[]>([]);
   const currentPieceNameRef = useRef('');
+  const amplitudeBufferRef = useRef<number[]>([]);
   const settingsRef = useRef(settings);
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
@@ -211,6 +244,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     silenceStartRef.current = null;
     soundStartRef.current = null;
     pauseStartRef.current = null;
+    amplitudeBufferRef.current = [];
 
     statusRef.current = 'waiting';
     setStatus('waiting');
@@ -239,8 +273,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             const norm = (db + 60) / 60;
             setMicLevel(norm);
 
+            // Update amplitude buffer for music detection
+            const buf = amplitudeBufferRef.current;
+            buf.push(norm);
+            if (buf.length > MUSIC_DETECT_BUFFER_SIZE) buf.shift();
+
             const threshold = settingsRef.current.sensitivityThreshold;
-            const isLoud = norm >= threshold;
+            let isLoud = norm >= threshold;
+
+            // Apply music detection filter if enabled
+            if (isLoud && settingsRef.current.musicDetectionEnabled) {
+              const score = computeMusicScore(buf, threshold);
+              // Strictness [0,1] maps to required score [0.2, 0.7]
+              const required = 0.2 + settingsRef.current.musicDetectionStrictness * 0.5;
+              isLoud = score >= required;
+            }
 
             if (st === 'waiting') {
               // Immediate transition to playing on any sound
@@ -342,6 +389,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setStatus('paused');
     silenceStartRef.current = null;
     soundStartRef.current = null;
+    amplitudeBufferRef.current = [];
 
     // Pause mic
     try { recorderRef.current?.pause(); } catch {}
@@ -402,6 +450,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     currentIntervalStartRef.current = elapsedRef.current;
     silenceStartRef.current = null;
     soundStartRef.current = null;
+    amplitudeBufferRef.current = [];
 
     syncState();
     writeSnapshot();

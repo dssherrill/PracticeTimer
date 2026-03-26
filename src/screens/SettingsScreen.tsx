@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAppColors } from '../theme';
@@ -220,6 +220,50 @@ export default function SettingsScreen() {
         Sound shorter than this is ignored. Filters coughs and page turns.
       </Text>
 
+      {/* ── Music Detection ──────────────────────── */}
+      <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 32 }]}>
+        Music Detection
+      </Text>
+
+      <View style={styles.toggleRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Filter non-music sounds
+          </Text>
+          <Text style={[styles.hint, { color: colors.textSecondary, marginTop: 2 }]}>
+            Distinguishes sustained instrument tones from speech and noise.
+          </Text>
+        </View>
+        <Switch
+          value={settings.musicDetectionEnabled}
+          onValueChange={(v) => updateSettings({ musicDetectionEnabled: v })}
+          trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor={settings.musicDetectionEnabled ? colors.primary : colors.textSecondary}
+        />
+      </View>
+
+      {settings.musicDetectionEnabled && (
+        <>
+          <Text style={[styles.label, { color: colors.text, marginTop: 16 }]}>
+            Strictness: {Math.round(settings.musicDetectionStrictness * 100)}%
+          </Text>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={1}
+            step={0.05}
+            value={settings.musicDetectionStrictness}
+            onValueChange={(v) => updateSettings({ musicDetectionStrictness: v })}
+            minimumTrackTintColor={colors.primary}
+            maximumTrackTintColor={colors.border}
+            thumbTintColor={colors.primary}
+          />
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>
+            Low = permissive (more sounds count as music). High = strict (only clear sustained tones).
+          </Text>
+        </>
+      )}
+
       {/* ── Cumulative Statistics ──────────────────── */}
       <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 32 }]}>
         Cumulative Statistics
@@ -319,6 +363,12 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
   label: { fontSize: 14, marginBottom: 4 },
   hint: { fontSize: 12, marginTop: 4 },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   slider: { width: '100%', height: 40, marginVertical: 8 },
   meterContainer: {
     width: '100%',
