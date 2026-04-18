@@ -88,7 +88,7 @@ export default function App() {
           }}
         />
       </Tab.Navigator>
-      <StatusBar style="auto" />
+      <StatusBar style="auto" translucent={false} />
     </NavigationContainer>
     </SessionProvider>
     </SettingsProvider>

@@ -8,7 +8,6 @@ const LightColors = {
   border: '#e0e0e0',
   playing: '#22c55e',       // green
   resting: '#f59e0b',       // amber
-  paused: '#9ca3af',        // gray
   primary: '#3b82f6',       // blue
   danger: '#ef4444',        // red
   tabBar: '#ffffff',
@@ -26,7 +25,6 @@ const DarkColors: typeof LightColors = {
   border: '#333333',
   playing: '#4ade80',
   resting: '#fbbf24',
-  paused: '#6b7280',
   primary: '#60a5fa',
   danger: '#f87171',
   tabBar: '#1e1e1e',

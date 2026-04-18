@@ -1,16 +1,23 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { useAppColors } from '../theme';
 import { useSession } from '../contexts/SessionContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatHMS } from '../utils/format';
 import { computeDisplayPairs, computeLivePairs } from '../utils/pairs';
+import { getPieceNames, addPieceName, removePieceName } from '../utils/storage';
 import type { DisplayPair } from '../types';
 
 export default function SessionDetailScreen() {
@@ -27,13 +34,16 @@ export default function SessionDetailScreen() {
     pairBoundaries,
     start,
     stop,
-    pause,
-    resume,
     nextPair,
     pendingSession,
+    updateLivePairPieceName,
   } = useSession();
 
   const isRunning = status !== 'idle' && !pendingSession;
+
+  const [editingPairIdx, setEditingPairIdx] = useState<number | null>(null);
+  const [editPieceText, setEditPieceText] = useState('');
+  const [knownPieces, setKnownPieces] = useState<string[]>([]);
 
   const pairs = useMemo(() => {
     const list = isRunning
@@ -51,32 +61,74 @@ export default function SessionDetailScreen() {
   if (status === 'waiting') { statusLabel = 'LISTENING…'; statusColor = colors.textSecondary; }
   else if (status === 'playing') { statusLabel = 'PLAYING'; statusColor = colors.playing; }
   else if (status === 'resting') { statusLabel = 'RESTING'; statusColor = colors.resting; }
-  else if (status === 'paused') { statusLabel = 'PAUSED'; statusColor = colors.paused; }
+
+  // Filter known pieces by what the user is typing
+  const filteredPieces = useMemo(() => {
+    const query = editPieceText.trim().toLowerCase();
+    if (!query) return knownPieces;
+    return knownPieces.filter((name) => name.toLowerCase().includes(query));
+  }, [editPieceText, knownPieces]);
+
+  const openPieceNameModal = (originalPairIndex: number) => {
+    const pair = isRunning
+      ? computeLivePairs(intervals, pairBoundaries, playTime, restTime)[originalPairIndex]
+      : undefined;
+    setEditPieceText(pair?.pieceName || '');
+    setEditingPairIdx(originalPairIndex);
+    getPieceNames().then(setKnownPieces);
+  };
+
+  const handleSavePieceName = async () => {
+    if (editingPairIdx === null) return;
+    const trimmed = editPieceText.trim();
+    updateLivePairPieceName(editingPairIdx, trimmed);
+    if (trimmed) {
+      await addPieceName(trimmed);
+      setKnownPieces(await getPieceNames());
+    }
+    setEditingPairIdx(null);
+  };
 
   const handleStartStop = async () => {
     if (isRunning) stop();
-    else if (!pendingSession) await start();
+    else if (!pendingSession) {
+      const started = await start();
+      if (started) {
+      // Prompt for piece name
+      setEditPieceText('');
+      setEditingPairIdx(0);
+      getPieceNames().then(setKnownPieces);
+      }
+    }
   };
 
-  const handlePauseResume = () => {
-    if (status === 'paused') resume();
-    else pause();
+  const handleNext = () => {
+    nextPair();
+    // Prompt for piece name on the new section
+    setEditPieceText('');
+    setEditingPairIdx(pairBoundaries.length); // new pair index after nextPair adds boundary
+    getPieceNames().then(setKnownPieces);
   };
 
-  const renderPair = ({ item, index }: { item: DisplayPair; index: number }) => (
-    <View
+  const renderPair = ({ item, index }: { item: DisplayPair; index: number }) => {
+    const originalIndex = totalPairs - index - 1;
+    return (
+    <TouchableOpacity
       style={[
         styles.pairRow,
         { backgroundColor: colors.card, borderColor: colors.border },
       ]}
+      onPress={() => isRunning && openPieceNameModal(originalIndex)}
+      activeOpacity={isRunning ? 0.7 : 1}
     >
       <View style={styles.pairHeader}>
         <Text style={[styles.pairNum, { color: colors.text }]}>Section {totalPairs - index}</Text>
-        {item.pieceName ? (
-          <Text style={[styles.pairName, { color: colors.textSecondary }]} numberOfLines={1}>
-            {item.pieceName}
-          </Text>
-        ) : null}
+        <Text
+          style={[styles.pairName, { color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          {item.pieceName || (isRunning ? 'tap to name…' : '')}
+        </Text>
       </View>
       <View style={styles.pairStats}>
         <Text style={[styles.pairStatText, { color: colors.playing }]}>
@@ -89,8 +141,9 @@ export default function SessionDetailScreen() {
           Total: {formatHMS(item.totalTime)}
         </Text>
       </View>
-    </View>
-  );
+    </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -158,22 +211,84 @@ export default function SessionDetailScreen() {
         </TouchableOpacity>
 
         {isRunning && (
-          <>
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.paused }]}
-              onPress={handlePauseResume}
-            >
-              <Text style={styles.btnText}>{status === 'paused' ? 'RESUME' : 'PAUSE'}</Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: colors.primary }]}
-              onPress={nextPair}
+              onPress={handleNext}
             >
               <Text style={styles.btnText}>NEXT</Text>
             </TouchableOpacity>
-          </>
         )}
       </View>
+
+      {/* ── Piece Name Edit Modal ──────────────────── */}
+      <Modal visible={editingPairIdx !== null} transparent animationType="fade">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Piece Name</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { color: colors.text, borderColor: colors.border, backgroundColor: colors.background },
+              ]}
+              value={editPieceText}
+              onChangeText={setEditPieceText}
+              placeholder="Enter piece name"
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+            />
+            {filteredPieces.length > 0 && (
+              <ScrollView style={{ maxHeight: 150, marginTop: 8 }} keyboardShouldPersistTaps="handled">
+                {filteredPieces.map((name) => (
+                  <TouchableOpacity
+                    key={name}
+                    style={[
+                      styles.piecePickerItem,
+                      {
+                        borderBottomColor: colors.border,
+                        backgroundColor: editPieceText === name ? colors.primary + '30' : 'transparent',
+                      },
+                    ]}
+                    onPress={() => setEditPieceText(name)}
+                    onLongPress={() => {
+                      Alert.alert('Delete Piece', `Remove "${name}" from saved pieces?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await removePieceName(name);
+                            setKnownPieces(await getPieceNames());
+                            if (editPieceText === name) setEditPieceText('');
+                          },
+                        },
+                      ]);
+                    }}
+                  >
+                    <Text style={{ color: colors.text, fontSize: 14 }}>{name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.playing }]}
+                onPress={handleSavePieceName}
+              >
+                <Text style={styles.modalBtnText}>OK</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.border }]}
+                onPress={() => setEditingPairIdx(null)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>CANCEL</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -224,4 +339,22 @@ const styles = StyleSheet.create({
   },
   btn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 8 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 1 },
+  modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalContent: { margin: 24, borderRadius: 16, padding: 24, maxHeight: '70%' },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 44,
+  },
+  piecePickerItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 20, justifyContent: 'center' },
+  modalBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 8 },
+  modalBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

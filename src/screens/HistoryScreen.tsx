@@ -21,7 +21,7 @@ export default function HistoryScreen() {
       <Stack.Screen
         name="SessionList"
         component={SessionListScreen}
-        options={{ title: 'History', headerShown: false }}
+        options={{ title: 'History' }}
       />
       <Stack.Screen
         name="SessionDetail"

@@ -1,7 +1,7 @@
 // ── Interval ────────────────────────────────────────────────
 
 export interface Interval {
-  type: 'play' | 'rest' | 'pause';
+  type: 'play' | 'rest';
   startOffset: number;       // seconds from session start
   duration: number;           // seconds
   pieceName?: string;         // only meaningful for 'play' intervals
@@ -12,10 +12,9 @@ export interface Interval {
 export interface SessionRecord {
   id: string;
   date: string;                // ISO timestamp of session start
-  totalDuration: number;       // total elapsed time in seconds (excludes manual pause)
+  totalDuration: number;       // total elapsed time in seconds (wall-clock from start to stop)
   playTime: number;
   restTime: number;
-  pauseTime: number;
   intervals: Interval[];
   pairBoundaries: number[];    // indices into intervals[] where each new pair starts (e.g. [0, 5, 12])
   notes: string;
@@ -49,7 +48,7 @@ export interface CumulativeStats {
 
 // ── Session State Machine ───────────────────────────────────
 
-export type SessionStatus = 'idle' | 'waiting' | 'playing' | 'resting' | 'paused';
+export type SessionStatus = 'idle' | 'waiting' | 'playing' | 'resting';
 
 // ── Settings ────────────────────────────────────────────────
 

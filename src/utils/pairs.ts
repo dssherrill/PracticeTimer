@@ -32,7 +32,7 @@ export function computeDisplayPairs(
       if (iv.type === 'play') {
         playTime += iv.duration;
         if (!pieceName && iv.pieceName) pieceName = iv.pieceName;
-      } else if (iv.type === 'rest') {
+      } else {
         restTime += iv.duration;
       }
     }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -48,70 +48,51 @@ function dateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// A "week row" is the unit of our FlatList.
-interface WeekRow {
-  /** The Monday of this week */
-  weekStart: Date;
-  /** 7 cells: null for cells outside the dataset range, or Date objects */
+interface CalendarRow {
+  /** 7 cells: null for empty/future cells, or Date objects */
   days: (Date | null)[];
-  /** Label to display above this row when it's the first week of a month */
+  /** Label to display above this row when it's the first row of a month */
   monthLabel?: string;
 }
 
 /**
- * Build an array of WeekRows from `startMonday` backwards for `weekCount` weeks.
- * Most recent week first.
+ * Build calendar rows month-by-month in standard calendar layout.
+ * Returns rows in reverse order for use with an inverted FlatList
+ * (data[0] = newest row displayed at visual bottom).
  */
-function buildWeeks(startMonday: Date, weekCount: number): WeekRow[] {
-  const rows: WeekRow[] = [];
-  const d = new Date(startMonday);
+function buildCalendarRows(today: Date, monthCount: number): CalendarRow[] {
+  const rows: CalendarRow[] = [];
 
-  for (let w = 0; w < weekCount; w++) {
-    const days: (Date | null)[] = [];
-    for (let i = 0; i < 7; i++) {
-      const cell = new Date(d);
-      cell.setDate(d.getDate() + i);
-      // Don't show future dates
-      if (cell > new Date()) {
-        days.push(null);
-      } else {
-        days.push(cell);
+  for (let m = monthCount - 1; m >= 0; m--) {
+    const monthDate = new Date(today.getFullYear(), today.getMonth() - m, 1);
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const monthLabel = `${MONTH_NAMES[month]} ${year}`;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const startOffset = mondayBasedDay(monthDate);
+
+    let currentDay = 1;
+    let isFirstRow = true;
+
+    while (currentDay <= daysInMonth) {
+      const days: (Date | null)[] = [];
+      const startCol = isFirstRow ? startOffset : 0;
+
+      for (let i = 0; i < startCol; i++) days.push(null);
+      for (let i = startCol; i < 7 && currentDay <= daysInMonth; i++) {
+        const d = new Date(year, month, currentDay);
+        days.push(d > today ? null : d);
+        currentDay++;
       }
-    }
+      while (days.length < 7) days.push(null);
 
-    // If this week contains the 1st of a month, label it
-    let monthLabel: string | undefined;
-    for (const day of days) {
-      if (day && day.getDate() <= 7 && (rows.length === 0 || !rows[rows.length - 1].monthLabel || day.getDate() === 1)) {
-        if (day.getDate() === 1) {
-          monthLabel = `${MONTH_NAMES[day.getMonth()]} ${day.getFullYear()}`;
-          break;
-        }
-      }
+      rows.push({ days, monthLabel: isFirstRow ? monthLabel : undefined });
+      isFirstRow = false;
     }
-    // Also label the very first row
-    if (rows.length === 0 && !monthLabel) {
-      const firstDay = days.find((d) => d !== null);
-      if (firstDay) {
-        monthLabel = `${MONTH_NAMES[firstDay.getMonth()]} ${firstDay.getFullYear()}`;
-      }
-    }
-
-    rows.push({ weekStart: new Date(d), days, monthLabel });
-
-    // Move back one week
-    d.setDate(d.getDate() - 7);
   }
 
-  return rows;
-}
-
-/** Find the Monday on or before a date */
-function getMonday(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const offset = mondayBasedDay(d);
-  d.setDate(d.getDate() - offset);
-  return d;
+  // Reverse so data[0] = newest row (displayed at bottom by inverted FlatList)
+  return rows.reverse();
 }
 
 // ── color intensity ──────────────────────────────────────────
@@ -130,34 +111,33 @@ function practiceOpacity(seconds: number): number {
 
 // ── component ────────────────────────────────────────────────
 
-const INITIAL_WEEKS = 26; // ~6 months
-const LOAD_MORE_WEEKS = 13; // ~3 months more each time
+const INITIAL_MONTHS = 6;
+const LOAD_MORE_MONTHS = 3;
 
 export default function CalendarScreen() {
   const colors = useAppColors();
   const navigation = useNavigation<any>();
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
+  const [monthCount, setMonthCount] = useState(INITIAL_MONTHS);
 
-  const today = useMemo(() => new Date(), []);
-  const currentMonday = useMemo(() => getMonday(today), [today]);
+  const [today, setToday] = useState(() => new Date());
 
   useFocusEffect(
     useCallback(() => {
+      setToday(new Date());
       getSessions().then(setSessions).catch((e) => console.error('Failed to load sessions:', e));
     }, []),
   );
 
   const dailyMap = useMemo(() => buildDailyMap(sessions), [sessions]);
-  const weeks = useMemo(() => buildWeeks(currentMonday, weekCount), [currentMonday, weekCount]);
+  const weeks = useMemo(() => buildCalendarRows(today, monthCount), [today, monthCount]);
 
   const handleEndReached = useCallback(() => {
-    setWeekCount((c) => c + LOAD_MORE_WEEKS);
+    setMonthCount((c) => c + LOAD_MORE_MONTHS);
   }, []);
 
   const renderWeek = useCallback(
-    ({ item }: { item: WeekRow }) => {
-      const todayDate = new Date();
+    ({ item }: { item: CalendarRow }) => {
       return (
         <View>
           {item.monthLabel && (
@@ -171,7 +151,7 @@ export default function CalendarScreen() {
               const key = dateKey(day);
               const playSeconds = dailyMap.get(key) ?? 0;
               const opacity = practiceOpacity(playSeconds);
-              const isToday = isSameDay(day, todayDate);
+              const isToday = isSameDay(day, today);
 
               return (
                 <TouchableOpacity
@@ -218,7 +198,7 @@ export default function CalendarScreen() {
         </View>
       );
     },
-    [dailyMap, colors, navigation],
+    [dailyMap, colors, navigation, today],
   );
 
   return (
@@ -233,6 +213,7 @@ export default function CalendarScreen() {
       </View>
 
       <FlatList
+        inverted
         data={weeks}
         keyExtractor={(_, i) => i.toString()}
         renderItem={renderWeek}

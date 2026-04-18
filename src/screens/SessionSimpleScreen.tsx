@@ -32,8 +32,6 @@ export default function SessionSimpleScreen() {
     pairBoundaries,
     start,
     stop,
-    pause,
-    resume,
     nextPair,
     pendingSession,
     saveSession,
@@ -87,20 +85,25 @@ export default function SessionSimpleScreen() {
   if (status === 'waiting') { statusLabel = 'LISTENING…'; statusColor = colors.textSecondary; }
   else if (status === 'playing') { statusLabel = 'PLAYING'; statusColor = colors.playing; }
   else if (status === 'resting') { statusLabel = 'RESTING'; statusColor = colors.resting; }
-  else if (status === 'paused') { statusLabel = 'PAUSED'; statusColor = colors.paused; }
+
+  const openPieceNameModal = () => {
+    setEditPieceText('');
+    setEditingPairIdx(0);
+    setIsLiveEdit(true);
+    getPieceNames().then(setKnownPieces);
+  };
 
   const handleStartStop = async () => {
     if (isRunning) {
-      stop();
+      Alert.alert('Stop Session', 'Are you sure you want to stop?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Stop', style: 'destructive', onPress: () => stop() },
+      ]);
     } else if (!pendingSession) {
       setNotes('');
-      await start();
+      const started = await start();
+      if (started) openPieceNameModal();
     }
-  };
-
-  const handlePauseResume = () => {
-    if (status === 'paused') resume();
-    else pause();
   };
 
   const handleSave = () => {
@@ -210,20 +213,12 @@ export default function SessionSimpleScreen() {
         <Text style={styles.mainButtonText}>{isRunning ? 'STOP' : 'START'}</Text>
       </TouchableOpacity>
 
-      {/* Pause / Resume + Next */}
+      {/* Next Section */}
       {isRunning && (
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.secondaryButton, { borderColor: colors.paused }]}
-            onPress={handlePauseResume}
-          >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-              {status === 'paused' ? 'RESUME' : 'PAUSE'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.secondaryButton, { borderColor: colors.primary }]}
-            onPress={nextPair}
+            onPress={() => { nextPair(); openPieceNameModal(); }}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>NEXT</Text>
           </TouchableOpacity>
@@ -391,7 +386,7 @@ export default function SessionSimpleScreen() {
                 <Text style={styles.modalBtnText}>OK</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: colors.paused }]}
+                style={[styles.modalBtn, { backgroundColor: colors.textSecondary }]}
                 onPress={() => setEditingPairIdx(null)}
               >
                 <Text style={styles.modalBtnText}>CANCEL</Text>

@@ -233,10 +233,10 @@ export default function SessionDetailScreen() {
                 <Text style={styles.modalBtnText}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: colors.paused }]}
+                style={[styles.modalBtn, { backgroundColor: colors.border }]}
                 onPress={() => setEditingPairIndex(null)}
               >
-                <Text style={styles.modalBtnText}>Cancel</Text>
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>

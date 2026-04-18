@@ -186,7 +186,7 @@ export default function SettingsScreen() {
       <Slider
         style={styles.slider}
         minimumValue={1}
-        maximumValue={60}
+        maximumValue={30}
         step={1}
         value={settings.minRestDuration}
         onValueChange={(v) => updateSettings({ minRestDuration: v })}
@@ -208,7 +208,7 @@ export default function SettingsScreen() {
       <Slider
         style={styles.slider}
         minimumValue={1}
-        maximumValue={120}
+        maximumValue={30}
         step={1}
         value={settings.minPlayDuration}
         onValueChange={(v) => updateSettings({ minPlayDuration: v })}

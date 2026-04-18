@@ -59,7 +59,7 @@ function attributeSession(session: SessionRecord): PieceSummary[] {
       restTime,
       totalTime: playTime + restTime,
     }))
-    .sort((a, b) => b.totalTime - a.totalTime);
+    .sort((a, b) => b.totalTime - a.totalTime || a.pieceName.localeCompare(b.pieceName));
 }
 
 function mergePieceSummaries(lists: PieceSummary[][]): PieceSummary[] {
@@ -79,7 +79,7 @@ function mergePieceSummaries(lists: PieceSummary[][]): PieceSummary[] {
       restTime,
       totalTime: playTime + restTime,
     }))
-    .sort((a, b) => b.totalTime - a.totalTime);
+    .sort((a, b) => b.totalTime - a.totalTime || a.pieceName.localeCompare(b.pieceName));
 }
 
 // ── Build sections ──────────────────────────────────────────
@@ -102,14 +102,15 @@ function getWeekKey(date: Date): string {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function buildSections(sessions: SessionRecord[]): WeekSection[] {
   // Group sessions by day
   const dayMap = new Map<string, SessionRecord[]>();
   for (const s of sessions) {
-    const dayKey = s.date.slice(0, 10);
+    const d = new Date(s.date);
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const arr = dayMap.get(dayKey) || [];
     arr.push(s);
     dayMap.set(dayKey, arr);
