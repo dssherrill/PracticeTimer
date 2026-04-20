@@ -59,7 +59,7 @@ function attributeSession(session: SessionRecord): PieceSummary[] {
       restTime,
       totalTime: playTime + restTime,
     }))
-    .sort((a, b) => b.totalTime - a.totalTime || a.pieceName.localeCompare(b.pieceName));
+    .sort((a, b) => a.pieceName.localeCompare(b.pieceName));
 }
 
 function mergePieceSummaries(lists: PieceSummary[][]): PieceSummary[] {
@@ -79,7 +79,7 @@ function mergePieceSummaries(lists: PieceSummary[][]): PieceSummary[] {
       restTime,
       totalTime: playTime + restTime,
     }))
-    .sort((a, b) => b.totalTime - a.totalTime || a.pieceName.localeCompare(b.pieceName));
+    .sort((a, b) => a.pieceName.localeCompare(b.pieceName));
 }
 
 // ── Build sections ──────────────────────────────────────────

@@ -10,7 +10,7 @@ import {
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useAppColors } from '../../theme';
 import { SessionRecord } from '../../types';
-import { getSessions, deleteSession, deleteAllSessions } from '../../utils/storage';
+import { getSessions, deleteSession } from '../../utils/storage';
 import { formatHMS } from '../../utils/format';
 
 export default function SessionListScreen() {
@@ -57,24 +57,6 @@ export default function SessionListScreen() {
         },
       },
     ]);
-  };
-
-  const handleDeleteAll = () => {
-    Alert.alert(
-      'Delete All History',
-      'This will delete all session history. Cumulative statistics will not be affected.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteAllSessions();
-            setSessions([]);
-          },
-        },
-      ],
-    );
   };
 
   const formatDate = (iso: string) => {
@@ -137,42 +119,38 @@ export default function SessionListScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {sessions.length > 0 && (
+        <View style={[styles.headerRow, { backgroundColor: colors.background }]}>
+          <View style={styles.headerBtnGroup}>
+            <TouchableOpacity
+              style={[styles.reportBtn, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate('PracticeReport')}
+            >
+              <Text style={styles.reportBtnText}>Report</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.reportBtn, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate('Calendar')}
+            >
+              <Text style={styles.reportBtnText}>Calendar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       <FlatList
         ref={listRef}
         data={sessions}
         keyExtractor={(item) => item.id}
         renderItem={renderSession}
         contentContainerStyle={styles.listContent}
-onScrollToIndexFailed={(info) => {
-  const offset = info.averageItemLength * info.index;
-  listRef.current?.scrollToOffset({ offset, animated: true });
-}}        ListEmptyComponent={
+        onScrollToIndexFailed={(info) => {
+          const offset = info.averageItemLength * info.index;
+          listRef.current?.scrollToOffset({ offset, animated: true });
+        }}
+        ListEmptyComponent={
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             No sessions recorded yet.
           </Text>
-        }
-        ListHeaderComponent={
-          sessions.length > 0 ? (
-            <View style={styles.headerRow}>
-              <View style={styles.headerBtnGroup}>
-                <TouchableOpacity
-                  style={[styles.reportBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => navigation.navigate('PracticeReport')}
-                >
-                  <Text style={styles.reportBtnText}>Report</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.reportBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => navigation.navigate('Calendar')}
-                >
-                  <Text style={styles.reportBtnText}>Calendar</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity onPress={handleDeleteAll}>
-                <Text style={[styles.deleteAllText, { color: colors.danger }]}>Delete All</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null
         }
       />
     </View>
@@ -186,12 +164,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   headerBtnGroup: { flexDirection: 'row', gap: 8 },
   reportBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 6 },
   reportBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  deleteAllText: { fontSize: 14, fontWeight: '600' },
   card: {
     borderWidth: 1,
     borderRadius: 10,

@@ -6,9 +6,12 @@ import { useAppColors } from '../theme';
 import { useSettings } from '../contexts/SettingsContext';
 import { useSession } from '../contexts/SessionContext';
 import { useMicMeter } from '../hooks/useMicMeter';
-import { getCumulativeStats, resetCumulativeStats, getSessions } from '../utils/storage';
+import { getCumulativeStats, resetCumulativeStats, getSessions, deleteAllSessions } from '../utils/storage';
 import { formatHuman } from '../utils/format';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { File as FSFile, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 import type { CumulativeStats } from '../types';
 
 /**
@@ -305,6 +308,91 @@ export default function SettingsScreen() {
         style={[styles.resetButton, { borderColor: colors.primary }]}
         onPress={async () => {
           try {
+            const sessions = await getSessions();
+            const stats = await getCumulativeStats();
+            const pieceNames = await AsyncStorage.getItem('@PracticeTimer:pieceNames');
+            const backup = JSON.stringify({
+              sessions,
+              cumulativeStats: stats,
+              pieceNames: pieceNames ? JSON.parse(pieceNames) : [],
+              exportedAt: new Date().toISOString(),
+            });
+            const date = new Date().toISOString().slice(0, 10);
+            const fileName = `PracticeTimer-backup-${date}.json`;
+            const file = new FSFile(Paths.cache, fileName);
+            await file.write(backup);
+            await Sharing.shareAsync(file.uri, {
+              mimeType: 'application/json',
+              dialogTitle: 'Save Backup',
+              UTI: 'public.json',
+            });
+          } catch (e: any) {
+            console.error('Export failed:', e);
+            Alert.alert('Error', e?.message ?? 'Failed to export backup.');
+          }
+        }}
+      >
+        <Text style={{ color: colors.primary, fontWeight: '600' }}>Export Backup to File</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.resetButton, { borderColor: colors.primary }]}
+        onPress={async () => {
+          try {
+            const result = await DocumentPicker.getDocumentAsync({
+              type: 'application/json',
+              copyToCacheDirectory: true,
+            });
+            if (result.canceled) return;
+            const asset = result.assets[0];
+            if (!asset) return;
+            const pickedFile = new FSFile(asset.uri);
+            const content = await pickedFile.text();
+            let data: any;
+            try {
+              data = JSON.parse(content);
+            } catch {
+              Alert.alert('Error', 'The selected file is not valid JSON.');
+              return;
+            }
+            if (!data.sessions || !Array.isArray(data.sessions)) {
+              Alert.alert('Error', 'The file does not contain valid backup data.');
+              return;
+            }
+            const count = data.sessions.length;
+            Alert.alert(
+              'Restore from File',
+              `This backup contains ${count} session(s)${data.exportedAt ? ` (exported ${new Date(data.exportedAt).toLocaleDateString()})` : ''}. This will replace your current data.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Restore',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await AsyncStorage.setItem('@PracticeTimer:sessions', JSON.stringify(data.sessions));
+                    if (data.cumulativeStats) {
+                      await AsyncStorage.setItem('@PracticeTimer:cumulativeStats', JSON.stringify(data.cumulativeStats));
+                    }
+                    if (Array.isArray(data.pieceNames)) {
+                      await AsyncStorage.setItem('@PracticeTimer:pieceNames', JSON.stringify(data.pieceNames));
+                    }
+                    setStats(await getCumulativeStats());
+                    Alert.alert('Restored', `${count} session(s) restored from file.`);
+                  },
+                },
+              ],
+            );
+          } catch (e: any) {
+            console.error('Import failed:', e);
+            Alert.alert('Error', e?.message ?? 'Failed to import backup.');
+          }
+        }}
+      >
+        <Text style={{ color: colors.primary, fontWeight: '600' }}>Restore from File</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.resetButton, { borderColor: colors.primary }]}
+        onPress={async () => {
+          try {
             const backup = await AsyncStorage.getItem('@PracticeTimer:sessionsBackup');
             if (!backup) {
               Alert.alert('No Backup', 'No session backup is available.');
@@ -343,6 +431,38 @@ export default function SettingsScreen() {
         }}
       >
         <Text style={{ color: colors.primary, fontWeight: '600' }}>Restore Sessions from Backup</Text>
+      </TouchableOpacity>
+
+      {/* ── Delete All History ────────────────────── */}
+      <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 32 }]}>
+        History
+      </Text>
+      <TouchableOpacity
+        style={[styles.resetButton, { borderColor: colors.danger }]}
+        onPress={() => {
+          Alert.alert(
+            'Delete All History',
+            'This will delete all session history. Cumulative statistics will not be affected.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete All',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await deleteAllSessions();
+                    Alert.alert('Deleted', 'All session history has been deleted.');
+                  } catch (e: any) {
+                    console.error('Delete all failed:', e);
+                    Alert.alert('Error', e?.message ?? 'Failed to delete session history.');
+                  }
+                },
+              },
+            ],
+          );
+        }}
+      >
+        <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete All History</Text>
       </TouchableOpacity>
     </ScrollView>
   );

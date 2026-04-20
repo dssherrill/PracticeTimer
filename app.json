@@ -45,7 +45,8 @@
             "minSdkVersion": 24
           }
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {
