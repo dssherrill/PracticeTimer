@@ -16,9 +16,8 @@ import { useAppColors } from '../theme';
 import { useSession } from '../contexts/SessionContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatHMS } from '../utils/format';
-import { computeDisplayPairs, computeLivePairs } from '../utils/pairs';
 import { getPieceNames, addPieceName, removePieceName } from '../utils/storage';
-import type { DisplayPair } from '../types';
+import type { Section } from '../types';
 
 export default function SessionDetailScreen() {
   const colors = useAppColors();
@@ -30,13 +29,12 @@ export default function SessionDetailScreen() {
     playTime,
     restTime,
     micLevel,
-    intervals,
-    pairBoundaries,
+    sections,
     start,
     stop,
     nextPair,
     pendingSession,
-    updateLivePairPieceName,
+    updateLiveSectionPieceName,
   } = useSession();
 
   const isRunning = status !== 'idle' && !pendingSession;
@@ -45,16 +43,13 @@ export default function SessionDetailScreen() {
   const [editPieceText, setEditPieceText] = useState('');
   const [knownPieces, setKnownPieces] = useState<string[]>([]);
 
-  const pairs = useMemo(() => {
-    const list = isRunning
-      ? computeLivePairs(intervals, pairBoundaries, playTime, restTime)
-      : computeDisplayPairs(intervals, pairBoundaries);
+  const displaySections = useMemo(() => {
     // Reverse so the current/latest section is at the top
-    return list.slice().reverse();
-  }, [intervals, pairBoundaries, playTime, restTime, isRunning]);
+    return sections.slice().reverse();
+  }, [sections]);
 
-  const totalPairs = pairs.length;
-  const listRef = useRef<FlatList<DisplayPair>>(null);
+  const totalSections = displaySections.length;
+  const listRef = useRef<FlatList<Section>>(null);
 
   let statusLabel = 'READY';
   let statusColor = colors.textSecondary;
@@ -69,19 +64,17 @@ export default function SessionDetailScreen() {
     return knownPieces.filter((name) => name.toLowerCase().includes(query));
   }, [editPieceText, knownPieces]);
 
-  const openPieceNameModal = (originalPairIndex: number) => {
-    const pair = isRunning
-      ? computeLivePairs(intervals, pairBoundaries, playTime, restTime)[originalPairIndex]
-      : undefined;
-    setEditPieceText(pair?.pieceName || '');
-    setEditingPairIdx(originalPairIndex);
+  const openPieceNameModal = (originalIndex: number) => {
+    const sec = sections[originalIndex];
+    setEditPieceText(sec?.pieceName || '');
+    setEditingPairIdx(originalIndex);
     getPieceNames().then(setKnownPieces);
   };
 
   const handleSavePieceName = async () => {
     if (editingPairIdx === null) return;
     const trimmed = editPieceText.trim();
-    updateLivePairPieceName(editingPairIdx, trimmed);
+    updateLiveSectionPieceName(editingPairIdx, trimmed);
     if (trimmed) {
       await addPieceName(trimmed);
       setKnownPieces(await getPieceNames());
@@ -106,12 +99,12 @@ export default function SessionDetailScreen() {
     nextPair();
     // Prompt for piece name on the new section
     setEditPieceText('');
-    setEditingPairIdx(pairBoundaries.length); // new pair index after nextPair adds boundary
+    setEditingPairIdx(sections.length); // new section index after nextPair finalizes current
     getPieceNames().then(setKnownPieces);
   };
 
-  const renderPair = ({ item, index }: { item: DisplayPair; index: number }) => {
-    const originalIndex = totalPairs - index - 1;
+  const renderSection = ({ item, index }: { item: Section; index: number }) => {
+    const originalIndex = totalSections - index - 1;
     return (
     <TouchableOpacity
       style={[
@@ -122,7 +115,7 @@ export default function SessionDetailScreen() {
       activeOpacity={isRunning ? 0.7 : 1}
     >
       <View style={styles.pairHeader}>
-        <Text style={[styles.pairNum, { color: colors.text }]}>Section {totalPairs - index}</Text>
+        <Text style={[styles.pairNum, { color: colors.text }]}>Section {totalSections - index}</Text>
         <Text
           style={[styles.pairName, { color: colors.textSecondary }]}
           numberOfLines={1}
@@ -132,13 +125,13 @@ export default function SessionDetailScreen() {
       </View>
       <View style={styles.pairStats}>
         <Text style={[styles.pairStatText, { color: colors.playing }]}>
-          Play: {formatHMS(item.playTime)}
+          Play: {formatHMS(item.playDuration)}
         </Text>
         <Text style={[styles.pairStatText, { color: colors.resting }]}>
-          Rest: {formatHMS(item.restTime)}
+          Rest: {formatHMS(item.restDuration)}
         </Text>
         <Text style={[styles.pairStatText, { color: colors.text }]}>
-          Total: {formatHMS(item.totalTime)}
+          Total: {formatHMS(item.playDuration + item.restDuration)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -185,9 +178,9 @@ export default function SessionDetailScreen() {
       {/* Pairs list */}
       <FlatList
         ref={listRef}
-        data={pairs}
+        data={displaySections}
         keyExtractor={(_, i) => i.toString()}
-        renderItem={renderPair}
+        renderItem={renderSection}
         contentContainerStyle={styles.listContent}
         style={styles.list}
         ListEmptyComponent={

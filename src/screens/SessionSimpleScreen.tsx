@@ -16,7 +16,6 @@ import { useSession } from '../contexts/SessionContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatHMS } from '../utils/format';
 import { getPieceNames, addPieceName, removePieceName } from '../utils/storage';
-import { computeDisplayPairs, computeLivePairs } from '../utils/pairs';
 
 export default function SessionSimpleScreen() {
   const colors = useAppColors();
@@ -28,15 +27,14 @@ export default function SessionSimpleScreen() {
     playTime,
     restTime,
     micLevel,
-    intervals,
-    pairBoundaries,
+    sections,
     start,
     stop,
     nextPair,
     pendingSession,
     saveSession,
     discardSession,
-    updatePairPieceName,
+    updateSectionPieceName,
     currentPieceName,
     updateCurrentPieceName,
   } = useSession();
@@ -49,19 +47,9 @@ export default function SessionSimpleScreen() {
 
   const isRunning = status !== 'idle' && !pendingSession;
 
-  // Compute display pairs for live view (with in-progress time)
-  const livePairs = useMemo(
-    () => isRunning
-      ? computeLivePairs(intervals, pairBoundaries, playTime, restTime)
-      : computeDisplayPairs(intervals, pairBoundaries),
-    [intervals, pairBoundaries, playTime, restTime, isRunning],
-  );
-
-  // Compute display pairs for pending session modal
-  const pendingPairs = useMemo(
-    () => pendingSession
-      ? computeDisplayPairs(pendingSession.intervals, pendingSession.pairBoundaries)
-      : [],
+  // Compute display sections for pending session modal
+  const pendingSections = useMemo(
+    () => pendingSession?.sections ?? [],
     [pendingSession],
   );
 
@@ -116,7 +104,7 @@ export default function SessionSimpleScreen() {
 
   const handleOpenPairEdit = (pairIdx: number) => {
     setEditingPairIdx(pairIdx);
-    setEditPieceText(pendingPairs[pairIdx]?.pieceName || '');
+    setEditPieceText(pendingSections[pairIdx]?.pieceName || '');
     setIsLiveEdit(false);
   };
 
@@ -133,7 +121,7 @@ export default function SessionSimpleScreen() {
     if (isLiveEdit) {
       updateCurrentPieceName(trimmed);
     } else {
-      updatePairPieceName(editingPairIdx, trimmed);
+      updateSectionPieceName(editingPairIdx, trimmed);
     }
     if (trimmed) {
       await addPieceName(trimmed);
@@ -186,14 +174,14 @@ export default function SessionSimpleScreen() {
         </View>
       )}
 
-      {/* Current pair info */}
-      {isRunning && livePairs.length > 0 && (
+      {/* Current section info */}
+      {isRunning && sections.length > 0 && (
         <TouchableOpacity onPress={handleOpenLivePairEdit} style={styles.pairLabelTouchable}>
           <Text style={[styles.pairLabel, { color: colors.textSecondary }]}>
-            Section {livePairs.length}
+            Section {sections.length}
             {currentPieceName ? ` — ${currentPieceName}` : ''}
-            {'\n'}Play: {formatHMS(livePairs[livePairs.length - 1].playTime)}
-            {' / '}Rest: {formatHMS(livePairs[livePairs.length - 1].restTime)}
+            {'\n'}Play: {formatHMS(sections[sections.length - 1].playDuration)}
+            {' / '}Rest: {formatHMS(sections[sections.length - 1].restDuration)}
           </Text>
           <Text style={[styles.pairEditHint, { color: colors.primary }]}>
             {currentPieceName ? 'edit piece name' : 'tap to name piece…'}
@@ -260,36 +248,36 @@ export default function SessionSimpleScreen() {
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Sections</Text>
                 <Text style={[styles.summaryValue, { color: colors.text }]}>
-                  {pendingPairs.length}
+                  {pendingSections.length}
                 </Text>
               </View>
 
               {/* Sections — tap to name */}
-              {pendingPairs.length > 0 && (
+              {pendingSections.length > 0 && (
                 <View style={{ marginTop: 12 }}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary, marginBottom: 6 }]}>
                     Tap sections to name pieces:
                   </Text>
-                  {pendingPairs.map((pair, idx) => (
+                  {pendingSections.map((sec, idx) => (
                     <TouchableOpacity
                       key={idx}
                       style={[styles.pieceRow, { borderColor: colors.border }]}
                       onPress={() => handleOpenPairEdit(idx)}
                     >
                       <Text style={[styles.pieceRowTime, { color: colors.playing }]}>
-                        {formatHMS(pair.playTime)}
+                        {formatHMS(sec.playDuration)}
                       </Text>
                       <Text style={[styles.pieceRowTime, { color: colors.resting }]}>
-                        {formatHMS(pair.restTime)}
+                        {formatHMS(sec.restDuration)}
                       </Text>
                       <Text
                         style={[
                           styles.pieceRowName,
-                          { color: pair.pieceName ? colors.text : colors.textSecondary },
+                          { color: sec.pieceName ? colors.text : colors.textSecondary },
                         ]}
                         numberOfLines={1}
                       >
-                        {pair.pieceName || 'tap to name…'}
+                        {sec.pieceName || 'tap to name…'}
                       </Text>
                     </TouchableOpacity>
                   ))}

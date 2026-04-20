@@ -10,7 +10,6 @@ import { useAppColors } from '../../theme';
 import { SessionRecord } from '../../types';
 import { getSessions } from '../../utils/storage';
 import { formatHMS } from '../../utils/format';
-import { computeDisplayPairs } from '../../utils/pairs';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -41,14 +40,13 @@ interface WeekSection {
 // ── Attribution logic ───────────────────────────────────────
 
 function attributeSession(session: SessionRecord): PieceSummary[] {
-  const pairs = computeDisplayPairs(session.intervals, session.pairBoundaries ?? [0]);
   const map = new Map<string, { playTime: number; restTime: number }>();
 
-  for (const pair of pairs) {
-    const name = pair.pieceName || '(unnamed)';
+  for (const sec of session.sections) {
+    const name = sec.pieceName || '(unnamed)';
     const entry = map.get(name) || { playTime: 0, restTime: 0 };
-    entry.playTime += pair.playTime;
-    entry.restTime += pair.restTime;
+    entry.playTime += sec.playDuration;
+    entry.restTime += sec.restDuration;
     map.set(name, entry);
   }
 

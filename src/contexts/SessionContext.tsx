@@ -15,7 +15,7 @@ import {
 } from 'expo-audio';
 import type { AudioRecorder } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SessionStatus, Interval, SessionRecord } from '../types';
+import { SessionStatus, Section, SessionRecord, DATA_FORMAT_VERSION } from '../types';
 import { useSettings } from './SettingsContext';
 
 // ── Music detection ─────────────────────────────────────────
@@ -65,16 +65,18 @@ const PIECE_NAMES_KEY = '@PracticeTimer:pieceNames';
 
 // ── Snapshot (for crash recovery) ───────────────────────────
 interface SessionSnapshot {
+  snapshotVersion: number;       // 2
   sessionStartISO: string;
-  elapsedAtSnapshot: number;     // seconds of elapsed session time at snapshot
+  elapsedAtSnapshot: number;
   playTime: number;
   restTime: number;
-  intervals: Interval[];
-  pairBoundaries: number[];
+  sections: Section[];           // completed sections
+  currentSectionPlay: number;
+  currentSectionRest: number;
+  currentPieceName: string;
   status: SessionStatus;
   currentIntervalStart: number;  // offset in seconds from session start
-  lastUpdateEpoch: number;       // Date.now() at snapshot
-  notes: string;
+  lastUpdateEpoch: number;
 }
 
 // ── Context value ───────────────────────────────────────────
@@ -83,19 +85,18 @@ interface SessionContextValue {
   elapsed: number;               // total session seconds (wall-clock)
   playTime: number;
   restTime: number;
-  intervals: Interval[];
-  pairBoundaries: number[];
+  sections: Section[];           // completed + current in-progress section
   micLevel: number;              // 0–1, live mic level
   start: () => Promise<boolean>;
   stop: () => void;
   nextPair: () => void;
   saveSession: (notes: string) => Promise<void>;
   discardSession: () => void;
-  pendingSession: SessionRecord | null;   // set after STOP, before save/discard
-  updatePairPieceName: (pairIndex: number, name: string) => void;
+  pendingSession: SessionRecord | null;
+  updateSectionPieceName: (sectionIndex: number, name: string) => void;
   currentPieceName: string;
   updateCurrentPieceName: (name: string) => void;
-  updateLivePairPieceName: (pairIndex: number, name: string) => void;
+  updateLiveSectionPieceName: (sectionIndex: number, name: string) => void;
 }
 
 const SessionContext = createContext<SessionContextValue>({
@@ -103,8 +104,7 @@ const SessionContext = createContext<SessionContextValue>({
   elapsed: 0,
   playTime: 0,
   restTime: 0,
-  intervals: [],
-  pairBoundaries: [],
+  sections: [],
   micLevel: 0,
   start: async () => false,
   stop: () => {},
@@ -112,10 +112,10 @@ const SessionContext = createContext<SessionContextValue>({
   saveSession: async () => {},
   discardSession: () => {},
   pendingSession: null,
-  updatePairPieceName: () => {},
+  updateSectionPieceName: () => {},
   currentPieceName: '',
   updateCurrentPieceName: () => {},
-  updateLivePairPieceName: () => {},
+  updateLiveSectionPieceName: () => {},
 });
 
 export function useSession() {
@@ -131,9 +131,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [elapsed, setElapsed] = useState(0);
   const [playTime, setPlayTime] = useState(0);
   const [restTime, setRestTime] = useState(0);
-  const [intervals, setIntervals] = useState<Interval[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
   const [micLevel, setMicLevel] = useState(0);
-  const [pairBoundaries, setPairBoundaries] = useState<number[]>([]);
   const [pendingSession, setPendingSession] = useState<SessionRecord | null>(null);
   const [currentPieceName, setCurrentPieceNameState] = useState('');
 
@@ -148,22 +147,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const statusRef = useRef<SessionStatus>('idle');
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartRef = useRef<string>('');
-  const intervalsRef = useRef<Interval[]>([]);
-  const pairBoundariesRef = useRef<number[]>([]);
+  const sectionsRef = useRef<Section[]>([]);
+  const currentSectionPlayRef = useRef(0);
+  const currentSectionRestRef = useRef(0);
   const currentPieceNameRef = useRef('');
   const amplitudeBufferRef = useRef<number[]>([]);
   const settingsRef = useRef(settings);
 
   // ── Wall-clock timestamps (ms) ──
-  // When the session first started counting (waiting→playing)
   const sessionEpochRef = useRef(0);
-  // When the current play or rest interval began
   const intervalStartEpochRef = useRef(0);
-  // Accumulated play/rest seconds from finalized intervals
+  // Accumulated play/rest seconds from all finalized intervals (session totals)
   const accumPlayRef = useRef(0);
   const accumRestRef = useRef(0);
   // When silence started (for minRestDuration detection)
   const silenceStartEpochRef = useRef<number | null>(null);
+  // Whether any play has been detected in the session
+  const hasPlayRef = useRef(false);
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
@@ -179,24 +179,36 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
       let displayPlay: number;
       let displayRest: number;
+      let curSectionPlay = currentSectionPlayRef.current;
+      let curSectionRest = currentSectionRestRef.current;
       if (st === 'playing') {
         displayPlay = accumPlayRef.current + inProgressSec;
         displayRest = accumRestRef.current;
+        curSectionPlay += inProgressSec;
       } else {
-        // resting
         displayPlay = accumPlayRef.current;
         displayRest = accumRestRef.current + inProgressSec;
+        curSectionRest += inProgressSec;
       }
       setElapsed(Math.round(totalElapsed));
       setPlayTime(Math.round(displayPlay));
       setRestTime(Math.round(displayRest));
+
+      // Build live sections: completed + current in-progress
+      setSections([
+        ...sectionsRef.current,
+        {
+          ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
+          playDuration: Math.round(curSectionPlay),
+          restDuration: Math.round(curSectionRest),
+        },
+      ]);
     } else {
       setElapsed(0);
       setPlayTime(0);
       setRestTime(0);
+      setSections([...sectionsRef.current]);
     }
-    setIntervals([...intervalsRef.current]);
-    setPairBoundaries([...pairBoundariesRef.current]);
   }, []);
 
   /** Finalize the current play/rest interval at the given wall-clock epoch. */
@@ -205,26 +217,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (st !== 'playing' && st !== 'resting') return;
 
     const dur = secsBetween(intervalStartEpochRef.current, atEpoch);
-    const offset = secsBetween(sessionEpochRef.current, intervalStartEpochRef.current);
 
     if (dur > 0) {
       if (st === 'playing') {
-        intervalsRef.current.push({
-          type: 'play',
-          startOffset: offset,
-          duration: dur,
-          ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
-        });
         accumPlayRef.current += dur;
+        currentSectionPlayRef.current += dur;
       } else {
-        intervalsRef.current.push({
-          type: 'rest',
-          startOffset: offset,
-          duration: dur,
-        });
         accumRestRef.current += dur;
+        currentSectionRestRef.current += dur;
       }
     }
+  }, []);
+
+  /** Push the current section to the completed list and reset accumulators. */
+  const finalizeCurrentSection = useCallback(() => {
+    const play = Math.round(currentSectionPlayRef.current);
+    const rest = Math.round(currentSectionRestRef.current);
+    if (play > 0 || rest > 0) {
+      sectionsRef.current.push({
+        ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
+        playDuration: play,
+        restDuration: rest,
+      });
+    }
+    currentSectionPlayRef.current = 0;
+    currentSectionRestRef.current = 0;
   }, []);
 
   const writeSnapshot = useCallback(() => {
@@ -235,20 +252,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const inProgress = secsBetween(intervalStartEpochRef.current, now);
     let snapPlay = accumPlayRef.current;
     let snapRest = accumRestRef.current;
-    if (statusRef.current === 'playing') snapPlay += inProgress;
-    else if (statusRef.current === 'resting') snapRest += inProgress;
+    let snapSectionPlay = currentSectionPlayRef.current;
+    let snapSectionRest = currentSectionRestRef.current;
+    if (statusRef.current === 'playing') {
+      snapPlay += inProgress;
+      snapSectionPlay += inProgress;
+    } else if (statusRef.current === 'resting') {
+      snapRest += inProgress;
+      snapSectionRest += inProgress;
+    }
 
     const snap: SessionSnapshot = {
+      snapshotVersion: 2,
       sessionStartISO: sessionStartRef.current,
       elapsedAtSnapshot: totalElapsed,
       playTime: snapPlay,
       restTime: snapRest,
-      intervals: intervalsRef.current,
-      pairBoundaries: pairBoundariesRef.current,
+      sections: sectionsRef.current,
+      currentSectionPlay: snapSectionPlay,
+      currentSectionRest: snapSectionRest,
+      currentPieceName: currentPieceNameRef.current,
       status: statusRef.current,
       currentIntervalStart: secsBetween(sessionEpochRef.current, intervalStartEpochRef.current),
       lastUpdateEpoch: now,
-      notes: '',
     };
     AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
   }, []);
@@ -280,11 +306,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     // Reset state
     sessionStartRef.current = new Date().toISOString();
-    intervalsRef.current = [];
-    pairBoundariesRef.current = [0];
+    sectionsRef.current = [];
+    currentSectionPlayRef.current = 0;
+    currentSectionRestRef.current = 0;
     currentPieceNameRef.current = '';
     setCurrentPieceNameState('');
     amplitudeBufferRef.current = [];
+    hasPlayRef.current = false;
 
     sessionEpochRef.current = 0;
     intervalStartEpochRef.current = 0;
@@ -349,25 +377,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 const playDur = secsBetween(intervalStartEpochRef.current, silenceStart);
 
                 if (playDur >= settingsRef.current.minPlayDuration) {
-                  // Valid play — finalize play interval ending at silenceStart,
-                  // then start rest interval from silenceStart
-                  const playOffset = secsBetween(sessionEpochRef.current, intervalStartEpochRef.current);
-                  if (playDur > 0) {
-                    intervalsRef.current.push({
-                      type: 'play',
-                      startOffset: playOffset,
-                      duration: playDur,
-                      ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
-                    });
-                    accumPlayRef.current += playDur;
-                  }
+                  // Valid play — accumulate play time, start rest
+                  accumPlayRef.current += playDur;
+                  currentSectionPlayRef.current += playDur;
+                  hasPlayRef.current = true;
                   intervalStartEpochRef.current = silenceStart;
                   statusRef.current = 'resting';
                   setStatus('resting');
                   writeSnapshot();
                 } else {
                   // Too-short play — false alarm (cough, page turn)
-                  if (intervalsRef.current.some(iv => iv.type === 'play')) {
+                  if (hasPlayRef.current) {
                     // Had real play before — attribute to rest
                     statusRef.current = 'resting';
                     setStatus('resting');
@@ -385,7 +405,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
         } else if (st === 'resting') {
           if (isLoud) {
-            // Sound resumes — finalize rest interval, start playing
+            // Sound resumes — finalize rest, start playing
             finishInterval(now);
             intervalStartEpochRef.current = now;
             statusRef.current = 'playing';
@@ -420,8 +440,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       finishInterval(now);
     }
 
-    // Mark a new pair boundary at the next interval index
-    pairBoundariesRef.current.push(intervalsRef.current.length);
+    // Finalize the current section and start a new one
+    finalizeCurrentSection();
     currentPieceNameRef.current = '';
     setCurrentPieceNameState('');
 
@@ -434,7 +454,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     syncState();
     writeSnapshot();
-  }, [finishInterval, syncState, writeSnapshot]);
+  }, [finishInterval, finalizeCurrentSection, syncState, writeSnapshot]);
 
   // ── STOP ──
   const stopSession = useCallback(() => {
@@ -458,25 +478,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       finishInterval(now);
     }
 
+    // Finalize current section
+    finalizeCurrentSection();
+
     statusRef.current = 'idle';
     setStatus('idle');
     setMicLevel(0);
 
     // Build pending session record
-    if (intervalsRef.current.some(iv => iv.type === 'play')) {
+    if (sectionsRef.current.some(s => s.playDuration > 0)) {
       const totalElapsed = secsBetween(sessionEpochRef.current, now);
       const rec: SessionRecord = {
+        formatVersion: DATA_FORMAT_VERSION,
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         date: sessionStartRef.current,
-        totalDuration: Math.round(totalElapsed * 10) / 10,
-        playTime: Math.round(accumPlayRef.current * 10) / 10,
-        restTime: Math.round(accumRestRef.current * 10) / 10,
-        intervals: intervalsRef.current.map((iv) => ({
-          ...iv,
-          duration: Math.round(iv.duration * 10) / 10,
-          startOffset: Math.round(iv.startOffset * 10) / 10,
-        })),
-        pairBoundaries: [...pairBoundariesRef.current],
+        totalDuration: Math.round(totalElapsed),
+        playTime: Math.round(accumPlayRef.current),
+        restTime: Math.round(accumRestRef.current),
+        sections: sectionsRef.current,
         notes: '',
       };
       setPendingSession(rec);
@@ -484,7 +503,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     syncState();
     AsyncStorage.removeItem(SNAPSHOT_KEY);
-  }, [finishInterval, syncState]);
+  }, [finishInterval, finalizeCurrentSection, syncState]);
 
   // ── SAVE SESSION ──
   const saveSession = useCallback(async (notes: string) => {
@@ -529,9 +548,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const pieceNamesJson = await AsyncStorage.getItem(PIECE_NAMES_KEY);
     const knownNames: string[] = pieceNamesJson ? JSON.parse(pieceNamesJson) : [];
     let changed = false;
-    for (const iv of session.intervals) {
-      if (iv.pieceName && !knownNames.includes(iv.pieceName)) {
-        knownNames.push(iv.pieceName);
+    for (const sec of session.sections) {
+      if (sec.pieceName && !knownNames.includes(sec.pieceName)) {
+        knownNames.push(sec.pieceName);
         changed = true;
       }
     }
@@ -548,41 +567,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setPendingSession(null);
   }, []);
 
-  // ── UPDATE PIECE NAME ON PAIR ──
-  const updatePairPieceName = useCallback((pairIndex: number, name: string) => {
+  // ── UPDATE PIECE NAME ON SECTION (pending session) ──
+  const updateSectionPieceName = useCallback((sectionIndex: number, name: string) => {
     setPendingSession((prev) => {
-      if (!prev) return prev;
-      const bounds = prev.pairBoundaries.length > 0 ? prev.pairBoundaries : [0];
-      const start = bounds[pairIndex];
-      const end = pairIndex + 1 < bounds.length ? bounds[pairIndex + 1] : prev.intervals.length;
-      if (start === undefined) return prev;
-
-      const newIntervals = [...prev.intervals];
-      for (let i = start; i < end; i++) {
-        if (newIntervals[i].type === 'play') {
-          newIntervals[i] = { ...newIntervals[i], pieceName: name || undefined };
-        }
-      }
-      return { ...prev, intervals: newIntervals };
+      if (!prev || sectionIndex < 0 || sectionIndex >= prev.sections.length) return prev;
+      const newSections = [...prev.sections];
+      newSections[sectionIndex] = { ...newSections[sectionIndex], pieceName: name || undefined };
+      return { ...prev, sections: newSections };
     });
   }, []);
 
-  // ── UPDATE LIVE PAIR PIECE NAME (any pair during live session) ──
-  const updateLivePairPieceName = useCallback((pairIndex: number, name: string) => {
+  // ── UPDATE LIVE SECTION PIECE NAME (any section during live session) ──
+  const updateLiveSectionPieceName = useCallback((sectionIndex: number, name: string) => {
     const trimmed = name || '';
-    const bounds = pairBoundariesRef.current;
-    const pairStart = bounds[pairIndex];
-    const pairEnd = pairIndex + 1 < bounds.length ? bounds[pairIndex + 1] : intervalsRef.current.length;
-    if (pairStart === undefined) return;
+    const completed = sectionsRef.current;
 
-    for (let i = pairStart; i < pairEnd; i++) {
-      if (intervalsRef.current[i].type === 'play') {
-        intervalsRef.current[i] = { ...intervalsRef.current[i], pieceName: trimmed || undefined };
-      }
+    if (sectionIndex < completed.length) {
+      // Update a completed section
+      completed[sectionIndex] = { ...completed[sectionIndex], pieceName: trimmed || undefined };
     }
 
-    // If editing the current (last) pair, also update the currentPieceName ref
-    if (pairIndex === bounds.length - 1) {
+    // If editing the current (last) section, update the ref
+    if (sectionIndex >= completed.length) {
       currentPieceNameRef.current = trimmed;
       setCurrentPieceNameState(trimmed);
     }
@@ -595,15 +601,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const trimmed = name || '';
     currentPieceNameRef.current = trimmed;
     setCurrentPieceNameState(trimmed);
-
-    // Retroactively update existing play intervals in the current pair
-    const bounds = pairBoundariesRef.current;
-    const currentPairStart = bounds.length > 0 ? bounds[bounds.length - 1] : 0;
-    for (let i = currentPairStart; i < intervalsRef.current.length; i++) {
-      if (intervalsRef.current[i].type === 'play') {
-        intervalsRef.current[i] = { ...intervalsRef.current[i], pieceName: trimmed || undefined };
-      }
-    }
     syncState();
   }, [syncState]);
 
@@ -626,92 +623,111 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const snapJson = await AsyncStorage.getItem(SNAPSHOT_KEY);
       if (!snapJson) return;
       try {
-        const snap: SessionSnapshot = JSON.parse(snapJson);
+        const snap: any = JSON.parse(snapJson);
         // Back up existing sessions before modifying
         const existingJson = await AsyncStorage.getItem(SESSIONS_KEY);
         if (existingJson) {
           await AsyncStorage.setItem(SESSIONS_BACKUP_KEY, existingJson);
         }
-        // Auto-save the orphaned session
-        if (snap.intervals.some(iv => iv.type === 'play')) {
-          // Treat any legacy 'pause' intervals as 'rest'
-          let finalIntervals = snap.intervals.map(iv =>
-            (iv as any).type === 'pause' ? { ...iv, type: 'rest' as const } : iv
+
+        let recoveredSections: Section[];
+        let finalPlayTime: number;
+        let finalRestTime: number;
+        let finalElapsed: number;
+
+        if (snap.snapshotVersion >= 2) {
+          // New format snapshot
+          recoveredSections = [...(snap.sections || [])];
+          const curPlay = Math.round(snap.currentSectionPlay || 0);
+          const curRest = Math.round(snap.currentSectionRest || 0);
+          if (curPlay > 0 || curRest > 0) {
+            recoveredSections.push({
+              ...(snap.currentPieceName ? { pieceName: snap.currentPieceName } : {}),
+              playDuration: curPlay,
+              restDuration: curRest,
+            });
+          }
+          finalPlayTime = Math.round(snap.playTime || 0);
+          finalRestTime = Math.round(snap.restTime || 0);
+          finalElapsed = Math.round(snap.elapsedAtSnapshot || 0);
+        } else {
+          // Legacy format snapshot (intervals + pairBoundaries)
+          const intervals: any[] = (snap.intervals || []).map((iv: any) =>
+            iv.type === 'pause' ? { ...iv, type: 'rest' } : iv
           );
-          let finalPlayTime = snap.playTime;
-          let finalRestTime = snap.restTime;
-          let finalElapsed = snap.elapsedAtSnapshot;
+          const bounds: number[] = snap.pairBoundaries?.length
+            ? [...snap.pairBoundaries].sort((a: number, b: number) => a - b)
+            : [0];
+          if (bounds[0] !== 0) bounds.unshift(0);
 
-          // Add any tracked pause time to rest (for legacy snapshots)
-          if ((snap as any).pauseTime) {
-            finalRestTime += (snap as any).pauseTime;
-            finalElapsed += (snap as any).pauseTime;
-          }
-
-          if (finalIntervals.length > 0) {
-            const session: SessionRecord = {
-              id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-              date: snap.sessionStartISO,
-              totalDuration: Math.round(finalElapsed * 10) / 10,
-              playTime: Math.round(finalPlayTime * 10) / 10,
-              restTime: Math.round(finalRestTime * 10) / 10,
-              intervals: finalIntervals.map((iv) => ({
-                ...iv,
-                duration: Math.round(iv.duration * 10) / 10,
-                startOffset: Math.round(iv.startOffset * 10) / 10,
-              })),
-              pairBoundaries: snap.pairBoundaries || [0],
-              notes: '(auto-saved — app was terminated)',
-            };
-
-            const existing = await AsyncStorage.getItem(SESSIONS_KEY);
-            const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
-            sessions.unshift(session);
-            await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-
-            // Update cumulative stats
-            const statsJson = await AsyncStorage.getItem(STATS_KEY);
-            const stats = statsJson
-              ? JSON.parse(statsJson)
-              : { allTimeTotalDuration: 0, allTimePlayTime: 0, allTimeRestTime: 0, sessionCount: 0, dailyTotals: {} };
-            stats.allTimeTotalDuration += session.totalDuration;
-            stats.allTimePlayTime += session.playTime;
-            stats.allTimeRestTime += session.restTime;
-            stats.sessionCount += 1;
-            const dayKey = session.date.slice(0, 10);
-            if (!stats.dailyTotals[dayKey]) {
-              stats.dailyTotals[dayKey] = { totalDuration: 0, playTime: 0 };
+          recoveredSections = [];
+          for (let i = 0; i < bounds.length; i++) {
+            const start = bounds[i];
+            const end = i + 1 < bounds.length ? bounds[i + 1] : intervals.length;
+            if (start >= intervals.length) break;
+            let playDuration = 0;
+            let restDuration = 0;
+            let pieceName: string | undefined;
+            for (let j = start; j < end; j++) {
+              const iv = intervals[j];
+              if (iv.type === 'play') {
+                playDuration += iv.duration;
+                if (!pieceName && iv.pieceName) pieceName = iv.pieceName;
+              } else {
+                restDuration += iv.duration;
+              }
             }
-            stats.dailyTotals[dayKey].totalDuration += session.totalDuration;
-            stats.dailyTotals[dayKey].playTime += session.playTime;
-            await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
+            recoveredSections.push({
+              ...(pieceName ? { pieceName } : {}),
+              playDuration: Math.round(playDuration),
+              restDuration: Math.round(restDuration),
+            });
           }
+          finalPlayTime = Math.round(snap.playTime || 0);
+          finalRestTime = Math.round(snap.restTime || 0);
+          finalElapsed = Math.round(snap.elapsedAtSnapshot || 0);
+          if ((snap as any).pauseTime) {
+            finalRestTime += Math.round((snap as any).pauseTime);
+            finalElapsed += Math.round((snap as any).pauseTime);
+          }
+        }
+
+        if (recoveredSections.some(s => s.playDuration > 0)) {
+          const session: SessionRecord = {
+            formatVersion: DATA_FORMAT_VERSION,
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            date: snap.sessionStartISO,
+            totalDuration: finalElapsed,
+            playTime: finalPlayTime,
+            restTime: finalRestTime,
+            sections: recoveredSections,
+            notes: '(auto-saved — app was terminated)',
+          };
+
+          const existing = await AsyncStorage.getItem(SESSIONS_KEY);
+          const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
+          sessions.unshift(session);
+          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+
+          // Update cumulative stats
+          const statsJson = await AsyncStorage.getItem(STATS_KEY);
+          const stats = statsJson
+            ? JSON.parse(statsJson)
+            : { allTimeTotalDuration: 0, allTimePlayTime: 0, allTimeRestTime: 0, sessionCount: 0, dailyTotals: {} };
+          stats.allTimeTotalDuration += session.totalDuration;
+          stats.allTimePlayTime += session.playTime;
+          stats.allTimeRestTime += session.restTime;
+          stats.sessionCount += 1;
+          const dayKey = session.date.slice(0, 10);
+          if (!stats.dailyTotals[dayKey]) {
+            stats.dailyTotals[dayKey] = { totalDuration: 0, playTime: 0 };
+          }
+          stats.dailyTotals[dayKey].totalDuration += session.totalDuration;
+          stats.dailyTotals[dayKey].playTime += session.playTime;
+          await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
         }
       } catch {}
       await AsyncStorage.removeItem(SNAPSHOT_KEY);
-    })();
-  }, []);
-
-  // ── MIGRATE OLD DATA: backfill pairBoundaries for legacy sessions ──
-  useEffect(() => {
-    (async () => {
-      const json = await AsyncStorage.getItem(SESSIONS_KEY);
-      if (!json) return;
-      try {
-        const sessions: any[] = JSON.parse(json);
-        let changed = false;
-        for (const s of sessions) {
-          if (!s.pairBoundaries) {
-            s.pairBoundaries = [0];
-            changed = true;
-          }
-        }
-        if (changed) {
-          // Back up before migrating
-          await AsyncStorage.setItem(SESSIONS_BACKUP_KEY, json);
-          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-        }
-      } catch {}
     })();
   }, []);
 
@@ -722,8 +738,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         elapsed,
         playTime,
         restTime,
-        intervals,
-        pairBoundaries,
+        sections,
         micLevel,
         start,
         stop: stopSession,
@@ -731,10 +746,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         saveSession,
         discardSession,
         pendingSession,
-        updatePairPieceName,
+        updateSectionPieceName,
         currentPieceName,
         updateCurrentPieceName,
-        updateLivePairPieceName,
+        updateLiveSectionPieceName,
       }}
     >
       {children}

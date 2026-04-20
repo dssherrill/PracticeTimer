@@ -12,11 +12,10 @@ import {
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { useAppColors } from '../../theme';
-import { SessionRecord, DisplayPair } from '../../types';
+import { SessionRecord, Section } from '../../types';
 import { getSessions, updateSession } from '../../utils/storage';
 import { getPieceNames, addPieceName, removePieceName } from '../../utils/storage';
 import { formatHMS } from '../../utils/format';
-import { computeDisplayPairs } from '../../utils/pairs';
 
 export default function SessionDetailScreen() {
   const colors = useAppColors();
@@ -36,31 +35,25 @@ export default function SessionDetailScreen() {
     getPieceNames().then(setKnownPieces);
   }, [sessionId]);
 
-  const pairs = useMemo(() => {
+  const sessionSections = useMemo(() => {
     if (!session) return [];
-    return computeDisplayPairs(session.intervals, session.pairBoundaries ?? [0]);
+    return session.sections;
   }, [session]);
 
-  const handleOpenEdit = (pairIndex: number) => {
-    setEditingPairIndex(pairIndex);
-    setEditText(pairs[pairIndex]?.pieceName || '');
+  const handleOpenEdit = (sectionIndex: number) => {
+    setEditingPairIndex(sectionIndex);
+    setEditText(sessionSections[sectionIndex]?.pieceName || '');
   };
 
   const handleSavePieceName = useCallback(async () => {
     if (editingPairIndex === null || !session) return;
-    const pair = pairs[editingPairIndex];
-    if (!pair) return;
+    if (editingPairIndex < 0 || editingPairIndex >= session.sections.length) return;
 
     const trimmed = editText.trim();
-    const newIntervals = [...session.intervals];
-    // Set pieceName on all play intervals within this pair's range
-    for (let j = pair.intervalStartIndex; j < pair.intervalEndIndex; j++) {
-      if (newIntervals[j].type === 'play') {
-        newIntervals[j] = { ...newIntervals[j], pieceName: trimmed || undefined };
-      }
-    }
+    const newSections = [...session.sections];
+    newSections[editingPairIndex] = { ...newSections[editingPairIndex], pieceName: trimmed || undefined };
 
-    const updated = { ...session, intervals: newIntervals };
+    const updated = { ...session, sections: newSections };
     setSession(updated);
     await updateSession(updated);
 
@@ -70,7 +63,7 @@ export default function SessionDetailScreen() {
     }
 
     setEditingPairIndex(null);
-  }, [editingPairIndex, editText, session, pairs]);
+  }, [editingPairIndex, editText, session]);
 
   const handlePickPiece = (name: string) => {
     setEditText(name);
@@ -96,7 +89,7 @@ export default function SessionDetailScreen() {
       ? Math.round((session.playTime / (session.playTime + session.restTime)) * 100)
       : 0;
 
-  const renderPair = ({ item, index }: { item: DisplayPair; index: number }) => (
+  const renderSection = ({ item, index }: { item: Section; index: number }) => (
     <TouchableOpacity
       style={[styles.pairCard, { backgroundColor: colors.card, borderColor: colors.border }]}
       onPress={() => handleOpenEdit(index)}
@@ -120,19 +113,19 @@ export default function SessionDetailScreen() {
         <View style={styles.pairTimeStat}>
           <Text style={[styles.pairTimeLabel, { color: colors.textSecondary }]}>Play</Text>
           <Text style={[styles.pairTimeValue, { color: colors.playing }]}>
-            {formatHMS(item.playTime)}
+            {formatHMS(item.playDuration)}
           </Text>
         </View>
         <View style={styles.pairTimeStat}>
           <Text style={[styles.pairTimeLabel, { color: colors.textSecondary }]}>Rest</Text>
           <Text style={[styles.pairTimeValue, { color: colors.resting }]}>
-            {formatHMS(item.restTime)}
+            {formatHMS(item.restDuration)}
           </Text>
         </View>
         <View style={styles.pairTimeStat}>
           <Text style={[styles.pairTimeLabel, { color: colors.textSecondary }]}>Total</Text>
           <Text style={[styles.pairTimeValue, { color: colors.text }]}>
-            {formatHMS(item.totalTime)}
+            {formatHMS(item.playDuration + item.restDuration)}
           </Text>
         </View>
       </View>
@@ -167,9 +160,9 @@ export default function SessionDetailScreen() {
       </View>
 
       <FlatList
-        data={pairs}
+        data={sessionSections}
         keyExtractor={(_, i) => i.toString()}
-        renderItem={renderPair}
+        renderItem={renderSection}
         contentContainerStyle={styles.listContent}
       />
 

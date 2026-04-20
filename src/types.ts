@@ -1,34 +1,24 @@
-// ── Interval ────────────────────────────────────────────────
+// ── Section ─────────────────────────────────────────────────
 
-export interface Interval {
-  type: 'play' | 'rest';
-  startOffset: number;       // seconds from session start
-  duration: number;           // seconds
-  pieceName?: string;         // only meaningful for 'play' intervals
+export interface Section {
+  pieceName?: string;
+  playDuration: number;        // seconds (whole)
+  restDuration: number;        // seconds (whole)
 }
 
 // ── Session Record ──────────────────────────────────────────
 
+export const DATA_FORMAT_VERSION = 2;
+
 export interface SessionRecord {
+  formatVersion: number;       // DATA_FORMAT_VERSION
   id: string;
   date: string;                // ISO timestamp of session start
-  totalDuration: number;       // total elapsed time in seconds (wall-clock from start to stop)
-  playTime: number;
-  restTime: number;
-  intervals: Interval[];
-  pairBoundaries: number[];    // indices into intervals[] where each new pair starts (e.g. [0, 5, 12])
+  totalDuration: number;       // total elapsed time in seconds (whole)
+  playTime: number;            // seconds (whole)
+  restTime: number;            // seconds (whole)
+  sections: Section[];
   notes: string;
-}
-
-// ── Display Pair (computed from intervals + boundaries) ─────
-
-export interface DisplayPair {
-  pieceName?: string;
-  playTime: number;
-  restTime: number;
-  totalTime: number;
-  intervalStartIndex: number;  // index of first interval in this pair
-  intervalEndIndex: number;    // index past last interval in this pair
 }
 
 // ── Cumulative Statistics ───────────────────────────────────
