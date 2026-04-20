@@ -174,8 +174,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     const st = statusRef.current;
     if (st !== 'idle' && st !== 'waiting' && sessionEpochRef.current > 0) {
-      const totalElapsed = secsBetween(sessionEpochRef.current, now);
-      const inProgressSec = secsBetween(intervalStartEpochRef.current, now);
+      const inProgressSec = Math.floor(secsBetween(intervalStartEpochRef.current, now));
 
       let displayPlay: number;
       let displayRest: number;
@@ -190,17 +189,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         displayRest = accumRestRef.current + inProgressSec;
         curSectionRest += inProgressSec;
       }
-      setElapsed(Math.round(totalElapsed));
-      setPlayTime(Math.round(displayPlay));
-      setRestTime(Math.round(displayRest));
+      setElapsed(displayPlay + displayRest);
+      setPlayTime(displayPlay);
+      setRestTime(displayRest);
 
       // Build live sections: completed + current in-progress
       setSections([
         ...sectionsRef.current,
         {
           ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
-          playDuration: Math.round(curSectionPlay),
-          restDuration: Math.round(curSectionRest),
+          playDuration: curSectionPlay,
+          restDuration: curSectionRest,
         },
       ]);
     } else {
@@ -216,7 +215,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const st = statusRef.current;
     if (st !== 'playing' && st !== 'resting') return;
 
-    const dur = secsBetween(intervalStartEpochRef.current, atEpoch);
+    const dur = Math.floor(secsBetween(intervalStartEpochRef.current, atEpoch));
 
     if (dur > 0) {
       if (st === 'playing') {
@@ -231,8 +230,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   /** Push the current section to the completed list and reset accumulators. */
   const finalizeCurrentSection = useCallback(() => {
-    const play = Math.round(currentSectionPlayRef.current);
-    const rest = Math.round(currentSectionRestRef.current);
+    const play = currentSectionPlayRef.current;
+    const rest = currentSectionRestRef.current;
     if (play > 0 || rest > 0) {
       sectionsRef.current.push({
         ...(currentPieceNameRef.current ? { pieceName: currentPieceNameRef.current } : {}),
@@ -378,8 +377,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
                 if (playDur >= settingsRef.current.minPlayDuration) {
                   // Valid play — accumulate play time, start rest
-                  accumPlayRef.current += playDur;
-                  currentSectionPlayRef.current += playDur;
+                  const flooredPlayDur = Math.floor(playDur);
+                  accumPlayRef.current += flooredPlayDur;
+                  currentSectionPlayRef.current += flooredPlayDur;
                   hasPlayRef.current = true;
                   intervalStartEpochRef.current = silenceStart;
                   statusRef.current = 'resting';
@@ -487,14 +487,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     // Build pending session record
     if (sectionsRef.current.some(s => s.playDuration > 0)) {
-      const totalElapsed = secsBetween(sessionEpochRef.current, now);
       const rec: SessionRecord = {
         formatVersion: DATA_FORMAT_VERSION,
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         date: sessionStartRef.current,
-        totalDuration: Math.round(totalElapsed),
-        playTime: Math.round(accumPlayRef.current),
-        restTime: Math.round(accumRestRef.current),
+        totalDuration: accumPlayRef.current + accumRestRef.current,
+        playTime: accumPlayRef.current,
+        restTime: accumRestRef.current,
         sections: sectionsRef.current,
         notes: '',
       };
