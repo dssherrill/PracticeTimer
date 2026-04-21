@@ -13,6 +13,11 @@ import { File as FSFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import type { CumulativeStats } from '../types';
+import {
+  normalizeSessionRecord,
+  rebuildPieceNamesFromSessions,
+  recomputeCumulativeStatsFromSessions,
+} from '../utils/sessionNormalization';
 
 /**
  * Isolated component that owns the useAudioRecorder hook.
@@ -308,13 +313,15 @@ export default function SettingsScreen() {
         style={[styles.resetButton, { borderColor: colors.primary }]}
         onPress={async () => {
           try {
-            const sessions = await getSessions();
-            const stats = await getCumulativeStats();
+            const sessions = (await getSessions()).map(normalizeSessionRecord);
+            const stats = recomputeCumulativeStatsFromSessions(sessions);
             const pieceNames = await AsyncStorage.getItem('@PracticeTimer:pieceNames');
+            const knownNames: string[] = pieceNames ? JSON.parse(pieceNames) : [];
+            const normalizedPieceNames = rebuildPieceNamesFromSessions(sessions, knownNames);
             const backup = JSON.stringify({
               sessions,
               cumulativeStats: stats,
-              pieceNames: pieceNames ? JSON.parse(pieceNames) : [],
+              pieceNames: normalizedPieceNames,
               exportedAt: new Date().toISOString(),
             });
             const date = new Date().toISOString().slice(0, 10);
@@ -368,13 +375,17 @@ export default function SettingsScreen() {
                   text: 'Restore',
                   style: 'destructive',
                   onPress: async () => {
-                    await AsyncStorage.setItem('@PracticeTimer:sessions', JSON.stringify(data.sessions));
-                    if (data.cumulativeStats) {
-                      await AsyncStorage.setItem('@PracticeTimer:cumulativeStats', JSON.stringify(data.cumulativeStats));
-                    }
-                    if (Array.isArray(data.pieceNames)) {
-                      await AsyncStorage.setItem('@PracticeTimer:pieceNames', JSON.stringify(data.pieceNames));
-                    }
+                    const normalizedSessions = data.sessions.map(normalizeSessionRecord);
+                    const normalizedStats = recomputeCumulativeStatsFromSessions(normalizedSessions);
+                    const normalizedNames = rebuildPieceNamesFromSessions(
+                      normalizedSessions,
+                      Array.isArray(data.pieceNames) ? data.pieceNames : [],
+                    );
+
+                    await AsyncStorage.setItem('@PracticeTimer:sessions', JSON.stringify(normalizedSessions));
+                    await AsyncStorage.setItem('@PracticeTimer:cumulativeStats', JSON.stringify(normalizedStats));
+                    await AsyncStorage.setItem('@PracticeTimer:pieceNames', JSON.stringify(normalizedNames));
+
                     setStats(await getCumulativeStats());
                     Alert.alert('Restored', `${count} session(s) restored from file.`);
                   },

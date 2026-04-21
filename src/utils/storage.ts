@@ -1,5 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SessionRecord, CumulativeStats, Section, DATA_FORMAT_VERSION } from '../types';
+import {
+  normalizePieceName,
+  normalizeSessionRecord,
+  rebuildPieceNamesFromSessions,
+} from './sessionNormalization';
 
 const SESSIONS_KEY = '@PracticeTimer:sessions';
 const STATS_KEY = '@PracticeTimer:cumulativeStats';
@@ -13,7 +18,9 @@ const SESSIONS_BACKUP_KEY = '@PracticeTimer:sessionsBackup';
  * section-based format.  Returns the session unchanged if already v2+.
  */
 function migrateSession(raw: any): SessionRecord {
-  if (raw.formatVersion >= DATA_FORMAT_VERSION) return raw as SessionRecord;
+  if (raw.formatVersion >= DATA_FORMAT_VERSION) {
+    return normalizeSessionRecord(raw as SessionRecord);
+  }
 
   // Legacy format: has intervals[] and pairBoundaries[]
   const intervals: any[] = raw.intervals ?? [];
@@ -47,7 +54,7 @@ function migrateSession(raw: any): SessionRecord {
     });
   }
 
-  return {
+  return normalizeSessionRecord({
     formatVersion: DATA_FORMAT_VERSION,
     id: raw.id,
     date: raw.date,
@@ -56,7 +63,7 @@ function migrateSession(raw: any): SessionRecord {
     restTime: Math.round(raw.restTime),
     sections,
     notes: raw.notes ?? '',
-  };
+  });
 }
 
 // ── Sessions ────────────────────────────────────────────────
@@ -136,11 +143,11 @@ export async function getPieceNames(): Promise<string[]> {
 }
 
 export async function addPieceName(name: string): Promise<void> {
+  const normalized = normalizePieceName(name);
   const names = await getPieceNames();
-  if (!names.includes(name)) {
-    names.push(name);
-    names.sort((a, b) => a.localeCompare(b));
-    await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(names));
+  const rebuilt = rebuildPieceNamesFromSessions([], [...names, normalized]);
+  if (rebuilt.length !== names.length || rebuilt.some((n, i) => names[i] !== n)) {
+    await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(rebuilt));
   }
 }
 

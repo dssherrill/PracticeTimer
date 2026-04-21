@@ -17,6 +17,11 @@ import type { AudioRecorder } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SessionStatus, Section, SessionRecord, DATA_FORMAT_VERSION } from '../types';
 import { useSettings } from './SettingsContext';
+import {
+  normalizeSessionRecord,
+  rebuildPieceNamesFromSessions,
+  recomputeCumulativeStatsFromSessions,
+} from '../utils/sessionNormalization';
 
 // ── Music detection ─────────────────────────────────────────
 // Buffer size: 30 samples × 100ms = 3-second sliding window
@@ -153,6 +158,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const currentPieceNameRef = useRef('');
   const amplitudeBufferRef = useRef<number[]>([]);
   const settingsRef = useRef(settings);
+  const pendingAutoSavePromiseRef = useRef<Promise<void> | null>(null);
 
   // ── Wall-clock timestamps (ms) ──
   const sessionEpochRef = useRef(0);
@@ -485,19 +491,56 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setStatus('idle');
     setMicLevel(0);
 
-    // Build pending session record
+    // Build final session record and persist immediately
     if (sectionsRef.current.some(s => s.playDuration > 0)) {
-      const rec: SessionRecord = {
+      const rawRecord: SessionRecord = {
         formatVersion: DATA_FORMAT_VERSION,
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         date: sessionStartRef.current,
-        totalDuration: accumPlayRef.current + accumRestRef.current,
-        playTime: accumPlayRef.current,
-        restTime: accumRestRef.current,
+        totalDuration: 0,
+        playTime: 0,
+        restTime: 0,
         sections: sectionsRef.current,
         notes: '',
       };
+      const rec = normalizeSessionRecord(rawRecord);
+
+      // Keep a live pending session so notes/section names can be edited then saved.
       setPendingSession(rec);
+
+      const autoSavePromise = (async () => {
+        try {
+          // Save to sessions list with normalized totals and section names.
+          const existing = await AsyncStorage.getItem(SESSIONS_KEY);
+          const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
+          sessions.unshift(rec);
+          const normalizedSessions = sessions.map(normalizeSessionRecord);
+          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(normalizedSessions));
+
+          // Recompute cumulative stats from corrected sessions.
+          const recomputedStats = recomputeCumulativeStatsFromSessions(normalizedSessions);
+          await AsyncStorage.setItem(STATS_KEY, JSON.stringify(recomputedStats));
+
+          // Rebuild and normalize piece names from sessions + existing names.
+          const pieceNamesJson = await AsyncStorage.getItem(PIECE_NAMES_KEY);
+          const knownNames: string[] = pieceNamesJson ? JSON.parse(pieceNamesJson) : [];
+          const normalizedNames = rebuildPieceNamesFromSessions(normalizedSessions, knownNames);
+          await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(normalizedNames));
+        } catch (e) {
+          console.error('Failed to auto-save session:', e);
+          Alert.alert(
+            'Session Save Failed',
+            'The session could not be saved automatically. Please try saving again.'
+          );
+        }
+      })();
+
+      pendingAutoSavePromiseRef.current = autoSavePromise;
+      autoSavePromise.finally(() => {
+        if (pendingAutoSavePromiseRef.current === autoSavePromise) {
+          pendingAutoSavePromiseRef.current = null;
+        }
+      });
     }
 
     syncState();
@@ -507,58 +550,43 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // ── SAVE SESSION ──
   const saveSession = useCallback(async (notes: string) => {
     if (!pendingSession) return;
-    const session = { ...pendingSession, notes };
-
-    // Save to sessions list
-    const existing = await AsyncStorage.getItem(SESSIONS_KEY);
-    const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
-    sessions.unshift(session);
-    await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-
-    // Update cumulative stats
-    const statsJson = await AsyncStorage.getItem(STATS_KEY);
-    const stats = statsJson
-      ? JSON.parse(statsJson)
-      : { allTimeTotalDuration: 0, allTimePlayTime: 0, allTimeRestTime: 0, sessionCount: 0, dailyTotals: {} };
-
-    stats.allTimeTotalDuration += session.totalDuration;
-    stats.allTimePlayTime += session.playTime;
-    stats.allTimeRestTime += session.restTime;
-    stats.sessionCount += 1;
-
-    const dayKey = session.date.slice(0, 10); // YYYY-MM-DD
-    if (!stats.dailyTotals[dayKey]) {
-      stats.dailyTotals[dayKey] = { totalDuration: 0, playTime: 0 };
-    }
-    stats.dailyTotals[dayKey].totalDuration += session.totalDuration;
-    stats.dailyTotals[dayKey].playTime += session.playTime;
-
-    // Prune dailyTotals older than 90 days
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 90);
-    const cutoffKey = cutoff.toISOString().slice(0, 10);
-    for (const key of Object.keys(stats.dailyTotals)) {
-      if (key < cutoffKey) delete stats.dailyTotals[key];
-    }
-
-    await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
-
-    // Update piece names list
-    const pieceNamesJson = await AsyncStorage.getItem(PIECE_NAMES_KEY);
-    const knownNames: string[] = pieceNamesJson ? JSON.parse(pieceNamesJson) : [];
-    let changed = false;
-    for (const sec of session.sections) {
-      if (sec.pieceName && !knownNames.includes(sec.pieceName)) {
-        knownNames.push(sec.pieceName);
-        changed = true;
+    if (pendingAutoSavePromiseRef.current) {
+      try {
+        await pendingAutoSavePromiseRef.current;
+      } catch {
+        // Auto-save error is already surfaced to the user.
       }
     }
-    if (changed) {
-      knownNames.sort((a, b) => a.localeCompare(b));
-      await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(knownNames));
-    }
 
-    setPendingSession(null);
+    const session = normalizeSessionRecord({ ...pendingSession, notes });
+
+    try {
+      // Update existing saved session by ID; if missing, insert as fallback.
+      const existing = await AsyncStorage.getItem(SESSIONS_KEY);
+      const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
+      const idx = sessions.findIndex((s) => s.id === session.id);
+      if (idx >= 0) {
+        sessions[idx] = session;
+      } else {
+        sessions.unshift(session);
+      }
+      const normalizedSessions = sessions.map(normalizeSessionRecord);
+      await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(normalizedSessions));
+
+      // Recompute stats and piece names from corrected sessions.
+      const recomputedStats = recomputeCumulativeStatsFromSessions(normalizedSessions);
+      await AsyncStorage.setItem(STATS_KEY, JSON.stringify(recomputedStats));
+
+      const pieceNamesJson = await AsyncStorage.getItem(PIECE_NAMES_KEY);
+      const knownNames: string[] = pieceNamesJson ? JSON.parse(pieceNamesJson) : [];
+      const normalizedNames = rebuildPieceNamesFromSessions(normalizedSessions, knownNames);
+      await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(normalizedNames));
+
+      setPendingSession(null);
+    } catch (e) {
+      console.error('Failed to save session changes:', e);
+      Alert.alert('Save Failed', 'Could not save session changes. Please try again.');
+    }
   }, [pendingSession]);
 
   // ── DISCARD ──
@@ -692,7 +720,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (recoveredSections.some(s => s.playDuration > 0)) {
-          const session: SessionRecord = {
+          const rawSession: SessionRecord = {
             formatVersion: DATA_FORMAT_VERSION,
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             date: snap.sessionStartISO,
@@ -702,28 +730,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             sections: recoveredSections,
             notes: '(auto-saved — app was terminated)',
           };
+          const session = normalizeSessionRecord(rawSession);
 
           const existing = await AsyncStorage.getItem(SESSIONS_KEY);
           const sessions: SessionRecord[] = existing ? JSON.parse(existing) : [];
           sessions.unshift(session);
-          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+          const normalizedSessions = sessions.map(normalizeSessionRecord);
+          await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(normalizedSessions));
 
-          // Update cumulative stats
-          const statsJson = await AsyncStorage.getItem(STATS_KEY);
-          const stats = statsJson
-            ? JSON.parse(statsJson)
-            : { allTimeTotalDuration: 0, allTimePlayTime: 0, allTimeRestTime: 0, sessionCount: 0, dailyTotals: {} };
-          stats.allTimeTotalDuration += session.totalDuration;
-          stats.allTimePlayTime += session.playTime;
-          stats.allTimeRestTime += session.restTime;
-          stats.sessionCount += 1;
-          const dayKey = session.date.slice(0, 10);
-          if (!stats.dailyTotals[dayKey]) {
-            stats.dailyTotals[dayKey] = { totalDuration: 0, playTime: 0 };
-          }
-          stats.dailyTotals[dayKey].totalDuration += session.totalDuration;
-          stats.dailyTotals[dayKey].playTime += session.playTime;
-          await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
+          const recomputedStats = recomputeCumulativeStatsFromSessions(normalizedSessions);
+          await AsyncStorage.setItem(STATS_KEY, JSON.stringify(recomputedStats));
+
+          const pieceNamesJson = await AsyncStorage.getItem(PIECE_NAMES_KEY);
+          const knownNames: string[] = pieceNamesJson ? JSON.parse(pieceNamesJson) : [];
+          const normalizedNames = rebuildPieceNamesFromSessions(normalizedSessions, knownNames);
+          await AsyncStorage.setItem(PIECE_NAMES_KEY, JSON.stringify(normalizedNames));
         }
       } catch {}
       await AsyncStorage.removeItem(SNAPSHOT_KEY);

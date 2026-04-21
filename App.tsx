@@ -3,6 +3,7 @@ import { useColorScheme, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import SessionSimpleScreen from './src/screens/SessionSimpleScreen';
 import SessionDetailScreen from './src/screens/SessionDetailScreen';
@@ -43,54 +44,56 @@ export default function App() {
       };
 
   return (
-    <SettingsProvider>
-    <SessionProvider>
-    <NavigationContainer theme={navTheme}>
-      <Tab.Navigator
-        screenOptions={{
-          tabBarActiveTintColor: colors.tabBarActive,
-          tabBarInactiveTintColor: colors.tabBarInactive,
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.text,
-        }}
-      >
-        <Tab.Screen
-          name="SessionSimple"
-          component={SessionSimpleScreen}
-          options={{
-            title: 'Simple',
-            tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>▶</Text>,
-          }}
-        />
-        <Tab.Screen
-          name="SessionDetail"
-          component={SessionDetailScreen}
-          options={{
-            title: 'Detail',
-            tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>☰</Text>,
-          }}
-        />
-        <Tab.Screen
-          name="History"
-          component={HistoryScreen}
-          options={{
-            title: 'History',
-            tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>📋</Text>,
-            headerShown: false,
-          }}
-        />
-        <Tab.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{
-            title: 'Settings',
-            tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>⚙</Text>,
-          }}
-        />
-      </Tab.Navigator>
-      <StatusBar style="auto" translucent={false} />
-    </NavigationContainer>
-    </SessionProvider>
-    </SettingsProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SettingsProvider>
+        <SessionProvider>
+          <NavigationContainer theme={navTheme}>
+            <Tab.Navigator
+              screenOptions={{
+                tabBarActiveTintColor: colors.tabBarActive,
+                tabBarInactiveTintColor: colors.tabBarInactive,
+                headerStyle: { backgroundColor: colors.surface },
+                headerTintColor: colors.text,
+              }}
+            >
+              <Tab.Screen
+                name="SessionSimple"
+                component={SessionSimpleScreen}
+                options={{
+                  title: 'Simple',
+                  tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>▶</Text>,
+                }}
+              />
+              <Tab.Screen
+                name="SessionDetail"
+                component={SessionDetailScreen}
+                options={{
+                  title: 'Detail',
+                  tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>☰</Text>,
+                }}
+              />
+              <Tab.Screen
+                name="History"
+                component={HistoryScreen}
+                options={{
+                  title: 'History',
+                  tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>📋</Text>,
+                  headerShown: false,
+                }}
+              />
+              <Tab.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{
+                  title: 'Settings',
+                  tabBarIcon: ({ color, size }) => <Text style={{ fontSize: size, color }}>⚙</Text>,
+                }}
+              />
+            </Tab.Navigator>
+            <StatusBar style="auto" translucent={false} />
+          </NavigationContainer>
+        </SessionProvider>
+      </SettingsProvider>
+    </GestureHandlerRootView>
   );
 }

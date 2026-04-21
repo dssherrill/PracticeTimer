@@ -33,7 +33,6 @@ export default function SessionSimpleScreen() {
     nextPair,
     pendingSession,
     saveSession,
-    discardSession,
     updateSectionPieceName,
     currentPieceName,
     updateCurrentPieceName,
@@ -47,15 +46,14 @@ export default function SessionSimpleScreen() {
 
   const isRunning = status !== 'idle' && !pendingSession;
 
-  // Compute display sections for pending session modal
   const pendingSections = useMemo(
     () => pendingSession?.sections ?? [],
     [pendingSession],
   );
 
-  // Load known piece names when summary modal opens
   useEffect(() => {
     if (pendingSession) {
+      setNotes(pendingSession.notes || '');
       getPieceNames().then(setKnownPieces);
     }
   }, [pendingSession]);
@@ -88,21 +86,16 @@ export default function SessionSimpleScreen() {
         { text: 'Stop', style: 'destructive', onPress: () => stop() },
       ]);
     } else if (!pendingSession) {
-      setNotes('');
       const started = await start();
       if (started) openPieceNameModal();
     }
   };
 
-  const handleSave = () => {
+  const handleCloseSummary = () => {
     saveSession(notes);
   };
 
-  const handleDiscard = () => {
-    discardSession();
-  };
-
-  const handleOpenPairEdit = (pairIdx: number) => {
+  const handleOpenPendingPairEdit = (pairIdx: number) => {
     setEditingPairIdx(pairIdx);
     setEditPieceText(pendingSections[pairIdx]?.pieceName || '');
     setIsLiveEdit(false);
@@ -131,7 +124,10 @@ export default function SessionSimpleScreen() {
     setIsLiveEdit(false);
   };
 
-  const playPct = elapsed > 0 ? Math.round((playTime / elapsed) * 100) : 0;
+  const pendingTotal = pendingSession?.totalDuration ?? 0;
+  const pendingPlay = pendingSession?.playTime ?? 0;
+  const pendingRest = pendingSession?.restTime ?? 0;
+  const pendingPlayPct = pendingTotal > 0 ? Math.round((pendingPlay / pendingTotal) * 100) : 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -226,24 +222,24 @@ export default function SessionSimpleScreen() {
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total time</Text>
                 <Text style={[styles.summaryValue, { color: colors.text }]}>
-                  {formatHMS(pendingSession?.totalDuration ?? 0)}
+                  {formatHMS(pendingTotal)}
                 </Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Play time</Text>
                 <Text style={[styles.summaryValue, { color: colors.playing }]}>
-                  {formatHMS(pendingSession?.playTime ?? 0)}
+                  {formatHMS(pendingPlay)}
                 </Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Rest time</Text>
                 <Text style={[styles.summaryValue, { color: colors.resting }]}>
-                  {formatHMS(pendingSession?.restTime ?? 0)}
+                  {formatHMS(pendingRest)}
                 </Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Play %</Text>
-                <Text style={[styles.summaryValue, { color: colors.text }]}>{playPct}%</Text>
+                <Text style={[styles.summaryValue, { color: colors.text }]}>{pendingPlayPct}%</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Sections</Text>
@@ -252,7 +248,6 @@ export default function SessionSimpleScreen() {
                 </Text>
               </View>
 
-              {/* Sections — tap to name */}
               {pendingSections.length > 0 && (
                 <View style={{ marginTop: 12 }}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary, marginBottom: 6 }]}>
@@ -262,7 +257,7 @@ export default function SessionSimpleScreen() {
                     <TouchableOpacity
                       key={idx}
                       style={[styles.pieceRow, { borderColor: colors.border }]}
-                      onPress={() => handleOpenPairEdit(idx)}
+                      onPress={() => handleOpenPendingPairEdit(idx)}
                     >
                       <Text style={[styles.pieceRowTime, { color: colors.playing }]}>
                         {formatHMS(sec.playDuration)}
@@ -298,16 +293,10 @@ export default function SessionSimpleScreen() {
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: colors.playing }]}
-                  onPress={handleSave}
+                  style={[styles.modalBtn, { backgroundColor: colors.textSecondary }]}
+                  onPress={handleCloseSummary}
                 >
-                  <Text style={styles.modalBtnText}>SAVE</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: colors.danger }]}
-                  onPress={handleDiscard}
-                >
-                  <Text style={styles.modalBtnText}>DISCARD</Text>
+                  <Text style={styles.modalBtnText}>CLOSE</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>

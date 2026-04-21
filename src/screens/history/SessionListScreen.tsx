@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useAppColors } from '../../theme';
 import { SessionRecord } from '../../types';
@@ -19,6 +20,7 @@ export default function SessionListScreen() {
   const route = useRoute<any>();
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const listRef = useRef<FlatList<SessionRecord>>(null);
+  const openSwipeableRef = useRef<Swipeable | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -75,45 +77,70 @@ export default function SessionListScreen() {
   };
 
   const renderSession = ({ item }: { item: SessionRecord }) => {
+    let rowRef: Swipeable | null = null;
     const ratio =
       item.playTime + item.restTime > 0
         ? Math.round((item.playTime / (item.playTime + item.restTime)) * 100)
         : 0;
 
     return (
-      <TouchableOpacity
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => navigation.navigate('SessionDetail', { sessionId: item.id })}
-        onLongPress={() => handleDelete(item.id)}
+      <Swipeable
+        ref={(ref) => {
+          rowRef = ref;
+        }}
+        onSwipeableOpen={() => {
+          if (openSwipeableRef.current && openSwipeableRef.current !== rowRef) {
+            openSwipeableRef.current.close();
+          }
+          openSwipeableRef.current = rowRef;
+        }}
+        overshootRight={false}
+        renderRightActions={() => (
+          <TouchableOpacity
+            style={[styles.deleteAction, { backgroundColor: colors.danger }]}
+            onPress={() => {
+              openSwipeableRef.current?.close();
+              handleDelete(item.id);
+            }}
+          >
+            <Text style={styles.deleteActionText}>Delete</Text>
+          </TouchableOpacity>
+        )}
       >
-        <View style={styles.cardHeader}>
-          <Text style={[styles.cardDate, { color: colors.text }]}>{formatDate(item.date)}</Text>
-          <Text style={[styles.cardTime, { color: colors.textSecondary }]}>{formatTime(item.date)}</Text>
-        </View>
-        <View style={styles.cardStats}>
-          <View style={styles.cardStat}>
-            <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Total</Text>
-            <Text style={[styles.cardStatValue, { color: colors.text }]}>{formatHMS(item.totalDuration)}</Text>
+        <TouchableOpacity
+          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('SessionDetail', { sessionId: item.id })}
+          onLongPress={() => handleDelete(item.id)}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardDate, { color: colors.text }]}>{formatDate(item.date)}</Text>
+            <Text style={[styles.cardTime, { color: colors.textSecondary }]}>{formatTime(item.date)}</Text>
           </View>
-          <View style={styles.cardStat}>
-            <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play</Text>
-            <Text style={[styles.cardStatValue, { color: colors.playing }]}>{formatHMS(item.playTime)}</Text>
+          <View style={styles.cardStats}>
+            <View style={styles.cardStat}>
+              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Total</Text>
+              <Text style={[styles.cardStatValue, { color: colors.text }]}>{formatHMS(item.totalDuration)}</Text>
+            </View>
+            <View style={styles.cardStat}>
+              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play</Text>
+              <Text style={[styles.cardStatValue, { color: colors.playing }]}>{formatHMS(item.playTime)}</Text>
+            </View>
+            <View style={styles.cardStat}>
+              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Rest</Text>
+              <Text style={[styles.cardStatValue, { color: colors.resting }]}>{formatHMS(item.restTime)}</Text>
+            </View>
+            <View style={styles.cardStat}>
+              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play%</Text>
+              <Text style={[styles.cardStatValue, { color: colors.text }]}>{ratio}%</Text>
+            </View>
           </View>
-          <View style={styles.cardStat}>
-            <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Rest</Text>
-            <Text style={[styles.cardStatValue, { color: colors.resting }]}>{formatHMS(item.restTime)}</Text>
-          </View>
-          <View style={styles.cardStat}>
-            <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play%</Text>
-            <Text style={[styles.cardStatValue, { color: colors.text }]}>{ratio}%</Text>
-          </View>
-        </View>
-        {item.notes ? (
-          <Text style={[styles.cardNotes, { color: colors.textSecondary }]} numberOfLines={1}>
-            {item.notes}
-          </Text>
-        ) : null}
-      </TouchableOpacity>
+          {item.notes ? (
+            <Text style={[styles.cardNotes, { color: colors.textSecondary }]} numberOfLines={1}>
+              {item.notes}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      </Swipeable>
     );
   };
 
@@ -188,5 +215,13 @@ const styles = StyleSheet.create({
   cardStatLabel: { fontSize: 11, marginBottom: 2 },
   cardStatValue: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   cardNotes: { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
+  deleteAction: {
+    width: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  deleteActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   emptyText: { textAlign: 'center', marginTop: 48, fontSize: 15 },
 });
