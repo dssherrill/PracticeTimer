@@ -118,16 +118,16 @@ export default function SessionListScreen() {
           </View>
           <View style={styles.cardStats}>
             <View style={styles.cardStat}>
-              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Total</Text>
-              <Text style={[styles.cardStatValue, { color: colors.text }]}>{formatHMS(item.totalDuration)}</Text>
-            </View>
-            <View style={styles.cardStat}>
               <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play</Text>
               <Text style={[styles.cardStatValue, { color: colors.playing }]}>{formatHMS(item.playTime)}</Text>
             </View>
             <View style={styles.cardStat}>
               <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Rest</Text>
               <Text style={[styles.cardStatValue, { color: colors.resting }]}>{formatHMS(item.restTime)}</Text>
+            </View>
+            <View style={styles.cardStat}>
+              <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Total</Text>
+              <Text style={[styles.cardStatValue, { color: colors.text }]}>{formatHMS(item.totalDuration)}</Text>
             </View>
             <View style={styles.cardStat}>
               <Text style={[styles.cardStatLabel, { color: colors.textSecondary }]}>Play%</Text>

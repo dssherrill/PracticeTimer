@@ -259,12 +259,6 @@ export default function SessionDetailScreen() {
               <Text style={[styles.modalTitle, { color: colors.text }]}>Session Summary</Text>
 
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total time</Text>
-                <Text style={[styles.summaryValue, { color: colors.text }]}>
-                  {formatHMS(pendingSession?.totalDuration ?? 0)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Play time</Text>
                 <Text style={[styles.summaryValue, { color: colors.playing }]}>
                   {formatHMS(pendingSession?.playTime ?? 0)}
@@ -274,6 +268,12 @@ export default function SessionDetailScreen() {
                 <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Rest time</Text>
                 <Text style={[styles.summaryValue, { color: colors.resting }]}>
                   {formatHMS(pendingSession?.restTime ?? 0)}
+                </Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total time</Text>
+                <Text style={[styles.summaryValue, { color: colors.text }]}>
+                  {formatHMS(pendingSession?.totalDuration ?? 0)}
                 </Text>
               </View>
               <View style={styles.summaryRow}>

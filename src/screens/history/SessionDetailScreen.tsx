@@ -138,16 +138,16 @@ export default function SessionDetailScreen() {
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{formatHMS(session.totalDuration)}</Text>
-          </View>
-          <View style={styles.stat}>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Play</Text>
             <Text style={[styles.statValue, { color: colors.playing }]}>{formatHMS(session.playTime)}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Rest</Text>
             <Text style={[styles.statValue, { color: colors.resting }]}>{formatHMS(session.restTime)}</Text>
+          </View>
+          <View style={styles.stat}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{formatHMS(session.totalDuration)}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Play%</Text>
