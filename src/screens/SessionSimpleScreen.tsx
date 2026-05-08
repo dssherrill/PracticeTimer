@@ -216,7 +216,7 @@ export default function SessionSimpleScreen() {
           style={styles.modalOverlay}
         >
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <ScrollView>
+            <ScrollView style={{ flexShrink: 1 }}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Session Summary</Text>
 
               <View style={styles.summaryRow}>
@@ -291,15 +291,15 @@ export default function SessionSimpleScreen() {
                 multiline
               />
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: colors.textSecondary }]}
-                  onPress={handleCloseSummary}
-                >
-                  <Text style={styles.modalBtnText}>CLOSE</Text>
-                </TouchableOpacity>
-              </View>
             </ScrollView>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.textSecondary }]}
+                onPress={handleCloseSummary}
+              >
+                <Text style={styles.modalBtnText}>CLOSE</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -312,17 +312,31 @@ export default function SessionSimpleScreen() {
         >
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Piece Name</Text>
-            <TextInput
-              style={[
-                styles.notesInput,
-                { color: colors.text, borderColor: colors.border, backgroundColor: colors.background, minHeight: 44 },
-              ]}
-              value={editPieceText}
-              onChangeText={setEditPieceText}
-              placeholder="Enter piece name"
-              placeholderTextColor={colors.textSecondary}
-              autoFocus
-            />
+            <View style={styles.pieceInputRow}>
+              <TextInput
+                style={[
+                  styles.notesInput,
+                  styles.pieceInputField,
+                  { color: colors.text, borderColor: colors.border, backgroundColor: colors.background, minHeight: 44 },
+                ]}
+                value={editPieceText}
+                onChangeText={setEditPieceText}
+                placeholder="Enter piece name"
+                placeholderTextColor={colors.textSecondary}
+                autoFocus
+              />
+              {editPieceText.length > 0 && (
+                <TouchableOpacity
+                  style={styles.pieceClearBtn}
+                  onPress={() => setEditPieceText('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <View style={styles.pieceClearCircle}>
+                    <Text style={styles.pieceClearX}>✕</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
             {filteredPieces.length > 0 && (
               <ScrollView style={{ maxHeight: 150, marginTop: 8 }} keyboardShouldPersistTaps="handled">
                 {filteredPieces.map((name) => (
@@ -432,6 +446,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlignVertical: 'top',
   },
+  pieceInputRow: { position: 'relative', justifyContent: 'center' },
+  pieceInputField: { marginTop: 0, minHeight: 44, paddingRight: 44, textAlignVertical: 'center' },
+  pieceClearBtn: { position: 'absolute', right: 10, alignSelf: 'center' },
+  pieceClearCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#9e9e9e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pieceClearX: { color: '#fff', fontSize: 12, fontWeight: '700', lineHeight: 14 },
   modalButtons: { flexDirection: 'row', gap: 12, marginTop: 20, justifyContent: 'center' },
   modalBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 8 },
   modalBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
