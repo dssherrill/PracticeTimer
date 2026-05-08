@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState, useEffect } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -44,22 +44,9 @@ export default function SessionDetailScreen() {
   const [editingPairIdx, setEditingPairIdx] = useState<number | null>(null);
   const [editPieceText, setEditPieceText] = useState('');
   const [knownPieces, setKnownPieces] = useState<string[]>([]);
-  const [notes, setNotes] = useState('');
   const [isLiveEdit, setIsLiveEdit] = useState(false);
 
   const pendingSections = useMemo(() => pendingSession?.sections ?? [], [pendingSession]);
-
-  useEffect(() => {
-    if (pendingSession) {
-      setNotes(pendingSession.notes || '');
-      getPieceNames()
-        .then(setKnownPieces)
-        .catch((e) => {
-          console.error('Failed to load piece names for summary:', e);
-          setKnownPieces([]);
-        });
-    }
-  }, [pendingSession]);
 
   const displaySections = useMemo(() => {
     // Reverse so the current/latest section is at the top
@@ -82,13 +69,14 @@ export default function SessionDetailScreen() {
     return knownPieces.filter((name) => name.toLowerCase().includes(query));
   }, [editPieceText, knownPieces]);
 
-  const openPieceNameModal = (originalIndex: number) => {
+  const openPieceNameModal = async (originalIndex: number) => {
     const srcSections = pendingSession ? pendingSections : sections;
     const sec = srcSections[originalIndex];
+    const names = await getPieceNames();
+    setKnownPieces(names);
     setEditPieceText(sec?.pieceName || '');
     setEditingPairIdx(originalIndex);
     setIsLiveEdit(!pendingSession);
-    getPieceNames().then(setKnownPieces);
   };
 
   const handleSavePieceName = async () => {
@@ -124,10 +112,6 @@ export default function SessionDetailScreen() {
       getPieceNames().then(setKnownPieces);
       }
     }
-  };
-
-  const handleCloseSummary = () => {
-    saveSession(notes);
   };
 
   const handleNext = () => {
@@ -247,66 +231,6 @@ export default function SessionDetailScreen() {
             </TouchableOpacity>
         )}
       </View>
-
-      {/* ── Session Summary Modal ──────────────────── */}
-      <Modal visible={!!pendingSession} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <ScrollView style={{ flexShrink: 1 }}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Session Summary</Text>
-
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Play time</Text>
-                <Text style={[styles.summaryValue, { color: colors.playing }]}>
-                  {formatHMS(pendingSession?.playTime ?? 0)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Rest time</Text>
-                <Text style={[styles.summaryValue, { color: colors.resting }]}>
-                  {formatHMS(pendingSession?.restTime ?? 0)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total time</Text>
-                <Text style={[styles.summaryValue, { color: colors.text }]}>
-                  {formatHMS(pendingSession?.totalDuration ?? 0)}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Sections</Text>
-                <Text style={[styles.summaryValue, { color: colors.text }]}>
-                  {pendingSections.length}
-                </Text>
-              </View>
-
-              <TextInput
-                style={[
-                  styles.notesInput,
-                  { color: colors.text, borderColor: colors.border, backgroundColor: colors.background },
-                ]}
-                placeholder="Notes (optional)"
-                placeholderTextColor={colors.textSecondary}
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-              />
-
-            </ScrollView>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: colors.textSecondary }]}
-                onPress={handleCloseSummary}
-              >
-                <Text style={styles.modalBtnText}>CLOSE</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       {/* ── Piece Name Edit Modal ──────────────────── */}
       <Modal visible={editingPairIdx !== null} transparent animationType="fade">
@@ -447,22 +371,6 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
   modalContent: { margin: 24, borderRadius: 16, padding: 24, maxHeight: '70%' },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
-  summaryLabel: { fontSize: 16 },
-  summaryValue: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  notesInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 16,
-    minHeight: 60,
-    fontSize: 14,
-    textAlignVertical: 'top',
-  },
   modalInput: {
     borderWidth: 1,
     borderRadius: 8,
